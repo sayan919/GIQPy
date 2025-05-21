@@ -92,35 +92,37 @@ Run `python gigpy.py --help` for the exhaustive help text.
 ## `system_info.json` schema
 
 The file must be a **JSON array** with one entry per monomer followed by **one**
-entry describing the solvent.
+entry describing the solvent. 
 
+Example: [cv_dimer_water.json](./examples/cv_dimer_water.json)
 ```jsonc
 [
   {
-    "name": "M1",
-    "nAtoms": 32,
-    "charge": 0,
-    "spin_mult": 1,
-    "mol_formula": "C20H12N2"
+    "system"      : "monomer1",
+    "name"        : "cv",
+    "mol_formula" : "C16H12N3O1",
+    "nAtoms"      : 32,
+    "charge"      : 1,
+    "spin_mult"   : 1
   },
   {
-    "name": "M2",
-    "nAtoms": 32,
-    "charge": 0,
-    "spin_mult": 1,
-    "mol_formula": "C20H12N2"
+    "system"      : "monomer2",
+    "name"        : "cv",
+    "mol_formula" : "C16H12N3O1",
+    "nAtoms"      : 32,
+    "charge"      : 1,
+    "spin_mult"   : 1
   },
   {
-    "name": "MeCN",
-    "mol_formula": "C2H3N",
-    "nAtoms": 6,
-    "charges": [
-      { "element": "C", "charge": -0.167 },
-      { "element": "C", "charge":  0.538 },
-      { "element": "H", "charge":  0.060 },
-      { "element": "H", "charge":  0.060 },
-      { "element": "H", "charge":  0.060 },
-      { "element": "N", "charge": -0.551 }
+    "system"      : "solvent",
+    "name"        : "water",
+    "mol_formula" : "H2O",
+    "nAtoms"      : 3,
+    "charges": 
+    [
+      { "element": "O", "charge": -0.834 },
+      { "element": "H", "charge":  0.417 },
+      { "element": "H", "charge":  0.417 }
     ]
   }
 ]

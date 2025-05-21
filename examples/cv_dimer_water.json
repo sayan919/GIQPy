@@ -1,0 +1,30 @@
+[
+  {
+    "system"      : "monomer1",
+    "name"        : "cv",
+    "mol_formula" : "C16H12N3O1",
+    "nAtoms"      : 32,
+    "charge"      : 1,
+    "spin_mult"   : 1
+  },
+  {
+    "system"      : "monomer2",
+    "name"        : "cv",
+    "mol_formula" : "C16H12N3O1",
+    "nAtoms"      : 32,
+    "charge"      : 1,
+    "spin_mult"   : 1
+  },
+  {
+    "system"      : "solvent",
+    "name"        : "water",
+    "mol_formula" : "H2O",
+    "nAtoms"      : 3,
+    "charges": 
+    [
+      { "element": "O", "charge": -0.834 },
+      { "element": "H", "charge":  0.417 },
+      { "element": "H", "charge":  0.417 }
+    ]
+  }
+]
