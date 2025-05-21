@@ -4,6 +4,7 @@ GIGPy.py (Gaussian Input Generator in Python)
 
 Flags :
   --single_xyz / --traj_xyz : Input coordinate file(s).
+  --frames <N>         : Number of frames to extract from trajectory (default: all).
   --system_info <file.json> : Single JSON defining all monomers and solvent properties.
   --keywords_file <file.txt>: Gaussian route section keywords.
   --aggregate <M>           : Number of core monomer units.
@@ -665,19 +666,7 @@ def main() -> None:
 -------------------------------------------------------------------------------
 GIGPy (Gaussian Input Generator in Python)
 
-Purpose:
-  Automates the generation of Gaussian input files (.com) and auxiliary
-  coordinate files (.xyz) for QM/MM simulations, particularly for
-  Vertical Excitation Energy (VEE) and Excitation Energy Transfer (EETG)
-  calculations. It processes single XYZ or trajectory XYZ files, handles
-  QM/MM solvent partitioning, and allows for various embedding schemes.
-
-Quick Usage Example:
-  python GIGPy.py --traj_xyz inputs/traj.xyz --frames 10 --aggregate 2 \\
-    --system_info inputs/system.json --keywords_file inputs/keywords.txt \\
-    --qm_solvent 4.0 --mm_solvent --tag MyRun --output_com both
-
-Core Flags & Concepts:
+Core Flags:
   --single_xyz <file.xyz> or --traj_xyz <file.xyz> :
                                   Input coordinate file(s).
                                   GIGPy uses these for the entire system (monomers + solvent).

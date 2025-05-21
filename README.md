@@ -34,35 +34,84 @@ excitation‑energy‑transfer (EETG) calculations for molecular aggregates.
 
 * Python ≥ 3.8
 * NumPy
-
-```bash
-pip install numpy
-```
-
-All other imports are from the Python standard library.
+* All other imports are from the Python standard library.
 
 ## Arguments
 
-| Flag              | Argument(s)        | Description                                                                                                                                                               | Required?               |
-| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `--single_xyz`    | `<file.xyz>`       | Path to a single-frame XYZ file containing coordinates for entire system (core monomers + solvent).                                                                       | Yes (or `--traj_xyz`)   |
-| `--traj_xyz`      | `<file.xyz>`       | Path to a multi-frame XYZ trajectory; each frame in standard XYZ format.                                                                                                  | Yes (or `--single_xyz`) |
-| `--frames`        | `<N>`              | Number of frames to process when `--traj_xyz` is used; if omitted all frames are processed.                                                                               | If `--traj_xyz`         |
-| `--aggregate`     | `<M>`              | Number of core monomer units (e.g., 2 for a dimer); must match definitions in `system_info`.                                                                              | Yes                     |
-| `--system_info`   | `<file.json>`      | JSON defining monomer and solvent metadata (name, nAtoms, charge, spin\_mult, mol\_formula, per-atom charges, etc.).                                                      | Yes                     |
-| `--keywords_file` | `<file.txt>`       | Plain-text file of Gaussian route section keywords (one per line). Include PCM/solvation options here as needed.                                                          | Yes                     |
-| `--qm_solvent`    | `<radius>`         | Radius in Å for selecting explicit QM solvent shell around core atoms (default 5.0 Å).                                                                                    | No                      |
-| `--mm_solvent`    | `[<file.xyz>]`     | Define MM solvent embedding. Provide XYZ-like file of charges, or use flag alone to auto-detect non-QM solvent and assign charges from `system_info`. Omit flag for none. | No                      |
-| `--mm_monomer`    | `[0 \| <file1> …]` | MM embedding charges from other monomers: `0` = zero charges; list charge files with “charge x y z” per line.                                                             | No                      |
-| `--eetg`          | —                  | Generate only EETG `.com` for dimers (requires `--aggregate 2`). Skips dimer VEE `.com`.                                                                                  | No                      |
-| `--output_com`    | `<choice>`         | Which Gaussian `.com` files to write: `monomer`, `dimer`, or `both` (default `both`).                                                                                     | No                      |
-| `--output_xyz`    | `[choice]`         | Which descriptive `.xyz` files to write: `monomer`, `dimer`, `both`, or `none` (default `both` when flag present).                                                        | No                      |
-| `--tag`           | `<TAG_STRING>`     | Custom tag appended to generated `.com` filenames.                                                                                                                        | No                      |
-| `--logfile`       | `<filename>`       | Name for detailed log file (default `gigpy_run.txt`).                                                                                                                     | No                      |
-
----
 Run `python gigpy.py --help` for the exhaustive help text.
 
+---
+- `--single_xyz`: (Required)
+  - ***Number of inputs:*** 1 file
+  - Path to a single-frame XYZ file containing coordinates for entire system (core monomers + solvent)
+---
+- `--traj_xyz`: (Required)
+  - ***Number of inputs:*** 1 file
+  - Path to a multi-frame XYZ trajectory; each frame in standard XYZ format
+  - This and `--single_xyz` can not be used together
+---
+- `--frames`: (Required)
+  - ***Number of inputs:*** 1 integer
+  - Number of frames to process when `--traj_xyz` is used; if omitted all frames are processed
+---
+- `--aggregate`: (Required)
+  - ***Number of inputs:*** 1 integer
+  - Number of core monomer units.
+  - Filename if aggregate=1: monomer, 2: dimer, >=2: aggregate
+---
+- `--system_info`: (Required)
+  - ***Number of inputs:*** 1 file
+  - JSON defining monomer and solvent metadata (format described below)
+---
+- `--keywords_file`: (Required)
+  - ***Number of inputs:*** 1 file
+  - Plain-text file of Gaussian route section keywords (one per line)
+  - Include PCM/solvation options here as needed
+---
+- `--eetg`: (Optional)
+  - ***Number of inputs:*** 0 (only flag)
+  - Generate only EETG `.com` for dimers (requires `--aggregate 2`)
+  - Skips dimer VEE `.com`
+  - This flag is mutually exclusive with `--output_com`
+---
+- `--qm_solvent`: (Optional, default 5.0)
+  - ***Number of inputs:*** 1 float
+  - Radius in Å for selecting explicit QM solvent shell around core atoms 
+---
+- `--mm_monomer`: (Optional)
+  - ***Number of inputs:*** 0 or N files
+  - Include MM embedding charges from other monomers
+  - `0` = all atoms are assigned zero charges
+  -  List charge files with “charge x y z” per line for `N` monomers if `--aggregate N`
+  - Omit flag for no MM monomer charges
+---
+- `--mm_solvent`: (Optional)
+  - ***Number of inputs:*** 0 or 1 file
+  - Include MM solvent embedding
+  - flag alone to auto-detect non-QM solvent and assign charges from `system_info`
+  - or provide XYZ-like file path of charges
+  - omit flag for no MM solvent
+---
+- `--output_com`: (Optional, default `both`)
+  - ***Number of inputs:*** 0 or 1 string : `monomer`, `dimer`, `both`
+  - `monomer` : write only monomer .com files with QM and MM solvent if provided
+  - `dimer`   : write only dimer .com files with QM and MM solvent if provided
+  - `both`    : write both monomer and dimer .com files 
+---
+- `--output_xyz`: (Optional, default `both`)
+  - ***Number of inputs:*** 0 or 1 string : `monomer`, `dimer`, `both`
+  - `monomer` : write monomer + QM solvent .xyz files + their corresponding MM solvent xyz files separately
+  - `dimer`   : write dimer + QM solvent .xyz files + their corresponding MM solvent xyz files separately
+  - `both`    : write monomer and dimer QM .xyz files and the corresponding MM solvent xyz files separately
+  - `none` or omit flag : do not write any XYZ files
+---
+- `--tag`: (Optional)
+  - ***Number of inputs:*** 0 or 1 string
+  - Custom tag appended to generated .com filenames
+---
+- `--logfile`: (Optional)
+  - ***Number of inputs:*** 0 or 1 string
+  - Name for detailed log file (default `gigpy_run.log`)
 ---
 
 ## Input file : `system_info.json` 
