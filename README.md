@@ -15,8 +15,10 @@ excitation‑energy‑transfer (EETG) calculations for molecular aggregates.
 
 * **Single‐frame or multi‐frame** XYZ ingestion with automatic frame splitting and
   per‑frame output folders.
-* **Automatic QM/MM partitioning** using a radial cutoff for solvent and
-  user‑defined monomer metadata.
+* **Automated QM/MM Partitioning:**  
+  * **Core System Definition:** Clearly defines a "core" system based on the \--aggregate flag and corresponding atom counts in the \--system\_info JSON.  
+  * **QM Solvent Localization for Combined System:** Identifies solvent molecules to be included in the Quantum Mechanics (QM) region for the entire combined system (dimer/aggregate) based on a user-defined distance cutoff (--qm\_solvent) from any core atom. This forms the QM region for calculations on the whole system.  
+  * **Exclusive QM Solvent Localization for Individual Monomers:** When preparing inputs for individual monomer calculations (e.g., monomer1.com, monomer2.com), the script ensures that QM solvent molecules are uniquely assigned. A solvent molecule is assigned to the QM region of the *first* monomer (in their defined order) that it is localized to. This prevents the same solvent molecule from being part of the specific QM environment of multiple individual monomers in their separate calculations.
 * **Generation of Gaussian input files** for
 
   * Various applications depending on the `--keywords_file` contents.
