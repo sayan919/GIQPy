@@ -1,48 +1,40 @@
-# GIGPy – Gaussian Input Generator in Python
+# Generate QM/MM System Input Files for Gaussian or TeraChem
 
 **Version**: 1.0  |  **Date**: 20 May 2025
 
 ---
+This is single entry script to generate :
+- `Gaussian`: **.com** files with given set of keywords and proper formatting for a given system configuration.
+- `TeraChem`: **.xyz** files for given system configuration, which can be used paired with **.in** keywords file.
 
-GIGPy (Gaussian **I**nput **G**enerator in **Py**thon) is a single‐entry script that converts molecular
-coordinates in XYZ format—either a single structure or a full trajectory—into fully‑formed
-Gaussian `.com` input decks.  It automates QM/MM partitioning, solvent
-selection, frame management, and optionally writes helper XYZ files and
-point‑charge coordinates to streamline vertical excitation‑energy (VEE) and
-excitation‑energy‑transfer (EETG) calculations for molecular aggregates.
+## System configuiration explanation
 
-## Key capabilities
+- **Input:**
+  - **Single frame**: A single XYZ file containing the coordinates of the entire system (core monomers + solvent).
+  - **Multi-frame**: A multi-frame XYZ trajectory, where each frame is in standard XYZ format.
+- **Code capabilities:**
+  - **Simple usage** : generate a .com file for a single frame system (.xyz) with a given set of keywords.
+  - **Configuring solvent region**: (given a single-frame or multi-frame XYZ file with solute in a solvent)
+    - ***`QM solvent`***: user can pick out a localized QM solvent region by specifying a distance cutoff around each atom of the solute. In case of multiple solute molecules, the code will check for common solvent QM atoms between a given pair of localized QM region, and will assign them to one. This explicitely gives a QM region unique to each solute molecule.
+    - ***`MM solvent`***: user can provide a file with the coordinates of the solvent region, or the code can auto-detect the non-QM solvent and assign charges from the `system_info` JSON.
+    - The user can make combinations: no solvent, QM solvent only, MM solvent only, or both QM and MM solvent.
+    - This will be executed for each frame in case of a multi-frame trajectory XYZ file.
+  - **Configuring aggregates**:
+    - We define, no_of_aggregates: 1 = monomer, 2 = dimer, >=2 = aggregate.
+    - **`aggregate files`**: all the solute molecules will be present in the .com file and the .xyz file.
+    - **`isolated monomer files`**: user has the following options
+      - other monomer can be skipped
+      - other monomer can be included with zero charges in the MM region
+      - other monomer can be included with its specific MM charges in the MM region
+- **Output:**
+  - **.com files**:
+    - generated for each monomer and dimer (if applicable) with the specified keywords.
+    - genearated for **EET Analysis** calculations with proper formatting. (only for dimers)
+  - **.xyz files**: a separate .xyz file for QM region and its corresponding MM solvent region.
 
-* **Single‐frame or multi‐frame** XYZ ingestion with automatic frame splitting and
-  per‑frame output folders.
-* **Automated QM/MM Partitioning:**  
-  * **Core System Definition:** Clearly defines a "core" system based on the \--aggregate flag and corresponding atom counts in the \--system\_info JSON.  
-  * **QM Solvent Localization for Combined System:** Identifies solvent molecules to be included in the Quantum Mechanics (QM) region for the entire combined system (dimer/aggregate) based on a user-defined distance cutoff (--qm\_solvent) from any core atom. This forms the QM region for calculations on the whole system.  
-  * **Exclusive QM Solvent Localization for Individual Monomers:** When preparing inputs for individual monomer calculations (e.g., monomer1.com, monomer2.com), the script ensures that QM solvent molecules are uniquely assigned. A solvent molecule is assigned to the QM region of the *first* monomer (in their defined order) that it is localized to. This prevents the same solvent molecule from being part of the specific QM environment of multiple individual monomers in their separate calculations.
-* **Generation of Gaussian input files** for
 
-  * Various applications depending on the `--keywords_file` contents.
-  * Dimer EETG analyses with fragment labelling (`--eetg`).
-* **Flexible point‑charge embedding**
-
-  * Inter‑monomer charges via `--mm_monomer`.
-  * Solvent charges: explicit file or auto‑extraction from non‑QM solvent.
-* **Rich helper XYZ output** (`*_qm.xyz`, `*_mm_solvent.xyz`) for visual debugging.
-* **Robust logging** to `gigpy_run.log` and clear console progress bars.
-* **Extensive validation** of input JSON/XML, coordinate consistency, and
-  command‑line argument coherence.
-
-## Requirements
-
-* Python ≥ 3.8
-* NumPy
-* All other imports are from the Python standard library.
 
 ## Arguments
-
-Run `python gigpy.py --help` for the exhaustive help text.
-
----
 - `--single_xyz`: (Required)
   - ***Number of inputs:*** 1 file
   - Path to a single-frame XYZ file containing coordinates for entire system (core monomers + solvent)
@@ -64,17 +56,6 @@ Run `python gigpy.py --help` for the exhaustive help text.
 - `--system_info`: (Required)
   - ***Number of inputs:*** 1 file
   - JSON defining monomer and solvent metadata (format described below)
----
-- `--keywords_file`: (Required)
-  - ***Number of inputs:*** 1 file
-  - Plain-text file of Gaussian route section keywords (one per line)
-  - Include PCM/solvation options here as needed
----
-- `--eetg`: (Optional)
-  - ***Number of inputs:*** 0 (only flag)
-  - Generate only EETG `.com` for dimers (requires `--aggregate 2`)
-  - Skips dimer VEE `.com`
-  - This flag is mutually exclusive with `--output_com`
 ---
 - `--qm_solvent`: (Optional, default 5.0)
   - ***Number of inputs:*** 1 float
@@ -100,6 +81,17 @@ Run `python gigpy.py --help` for the exhaustive help text.
   - `dimer`   : write only dimer .com files with QM and MM solvent if provided
   - `both`    : write both monomer and dimer .com files 
 ---
+- `--gauss_keywords`: (optional; must be provided if `--output_com` is used)
+  - ***Number of inputs:*** 1 file
+  - Plain-text file of Gaussian route section keywords (one per line)
+  - Include PCM/solvation options here as needed
+---
+- `--eetg`: (Optional)
+  - ***Number of inputs:*** 0 (only flag)
+  - Generate only EETG `.com` for dimers (requires `--aggregate 2`)
+  - Skips dimer VEE `.com`
+  - This flag is mutually exclusive with `--output_com`
+---
 - `--output_xyz`: (Optional, default `both`)
   - ***Number of inputs:*** 0 or 1 string : `monomer`, `dimer`, `both`
   - `monomer` : write monomer + QM solvent .xyz files + their corresponding MM solvent xyz files separately
@@ -113,7 +105,7 @@ Run `python gigpy.py --help` for the exhaustive help text.
 ---
 - `--logfile`: (Optional)
   - ***Number of inputs:*** 0 or 1 string
-  - Name for detailed log file (default `gigpy_run.log`)
+  - Name for detailed log file (default `run.log`)
 ---
 
 ## Input files
@@ -199,10 +191,10 @@ Same format as above but the first column is **charge**, followed by *x y z*.
 ### 1  Single monomer, VEE, helper XYZ
 
 ```bash
-python gigpy.py --single_xyz M1.xyz \
+python gen_qm_mm_files.py --single_xyz M1.xyz \
                 --aggregate 1 \
                 --system_info system_info.json \
-                --keywords_file route.txt \
+                --gauss_keywords route.txt \
                 --output_com monomer \
                 --output_xyz
 ```
@@ -210,10 +202,10 @@ python gigpy.py --single_xyz M1.xyz \
 ### 2  Dimer trajectory, EETG, auto MM solvent
 
 ```bash
-python gigpy.py --traj_xyz dimer_traj.xyz --frames 10 \
+python gen_qm_mm_files.py --traj_xyz dimer_traj.xyz --frames 10 \
                 --aggregate 2 \
                 --system_info system_info.json \
-                --keywords_file route.txt \
+                --gauss_keywords route.txt \
                 --qm_solvent 6.0 \
                 --mm_solvent \
                 --eetg \
@@ -223,10 +215,10 @@ python gigpy.py --traj_xyz dimer_traj.xyz --frames 10 \
 ### 3  Trimer, explicit monomer charges & custom solvent charges
 
 ```bash
-python gigpy.py --single_xyz trimer.xyz \
+python gen_qm_mm_files.py --single_xyz trimer.xyz \
                 --aggregate 3 \
                 --system_info system_info.json \
-                --keywords_file route.txt \
+                --gauss_keywords route.txt \
                 --mm_monomer m1.chg m2.chg m3.chg \
                 --mm_solvent custom_solvent.xyz
 ```
@@ -240,14 +232,14 @@ python gigpy.py --single_xyz trimer.xyz \
 > dimer `.com` files: `dimer`, etc. : including qm, mm solvent if provided.
 
 XYZ files when `--output_xyz` is specified :
-> monomer XYZ files: `monomer1_qm.xyz` and its corresponding `monomer1_mm_solvent.xyz`
+> monomer XYZ files: `monomer<#>_qm.xyz` and its corresponding `monomer<#>_mm_solvent.xyz`
 
 > dimer XYZ files: `dimer_qm.xyz` and its corresponding `dimer_mm_solvent.xyz`
 
 > Temporary files (`_current_frame_data.xyz`) are deleted after use when
 processing trajectories.
 
-> `gigpy_run.log` is created in the current working directory.
+> `run.log` is created in the current working directory.
 
 ---
 
