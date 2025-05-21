@@ -7,7 +7,7 @@ This is single entry script to generate :
 - `Gaussian`: **.com** files with given set of keywords and proper formatting for a given system configuration.
 - `TeraChem`: **.xyz** files for given system configuration, which can be used paired with **.in** keywords file.
 
-## System configuiration explanation
+## Overview
 
 - **Input:**
   - **Single frame**: A single XYZ file containing the coordinates of the entire system (core monomers + solvent).
@@ -110,137 +110,94 @@ This is single entry script to generate :
 ---
 
 ## Input files
-## `keywords.txt`
-The file must be a **plain text** file with one entry per line.
-Example: [keywords.txt](./examples/keywords.txt)
-```text
-#p CAM-B3LYP/6-31G*                 ! Functional/basis set
-# TDA(Nstates=6)                    ! Excited state calculations
-# Density(Transition=1)             ! S0->S1 transition density
-# Integral(grid=fine)               ! Grid for two-electron integrals
-# SCF(conver=10)                    ! SCF convergence
-# NoSymm                            ! No symmetry keyword for dimers
-# EmpiricalDispersion=GD3           ! Dispersion interaction
-# IOp(9/40=4)                       ! Print eigenvector components threshold
-```
+### `keywords.txt`
+- The file must be a **plain text** file with one entry per line.
+  Example: [keywords.txt](./examples/keywords.txt)
+  ```text
+  #p CAM-B3LYP/6-31G*                 ! Functional/basis set
+  # TDA(Nstates=6)                    ! Excited state calculations
+  # Density(Transition=1)             ! S0->S1 transition density
+  # Integral(grid=fine)               ! Grid for two-electron integrals
+  # SCF(conver=10)                    ! SCF convergence
+  # NoSymm                            ! No symmetry keyword for dimers
+  # EmpiricalDispersion=GD3           ! Dispersion interaction
+  # IOp(9/40=4)                       ! Print eigenvector components threshold
+  ```
 
-## `system_info.json` 
+### `system_info.json` 
 
-The file must be a **JSON array** with one entry per monomer followed by **one**
+- The file must be a **JSON array** with one entry per monomer followed by **one**
 entry describing the solvent. 
 
-Example: [cv_dimer_water.json](./examples/cv_dimer_water.json)
-```jsonc
-[
-  {
-    "system"      : "monomer1",
-    "name"        : "cv",
-    "mol_formula" : "C16H12N3O1",
-    "nAtoms"      : 32,
-    "charge"      : 1,
-    "spin_mult"   : 1
-  },
-  {
-    "system"      : "monomer2",
-    "name"        : "cv",
-    "mol_formula" : "C16H12N3O1",
-    "nAtoms"      : 32,
-    "charge"      : 1,
-    "spin_mult"   : 1
-  },
-  {
-    "system"      : "solvent",
-    "name"        : "water",
-    "mol_formula" : "H2O",
-    "nAtoms"      : 3,
-    "charges": 
-    [
-      { "element": "O", "charge": -0.834 },
-      { "element": "H", "charge":  0.417 },
-      { "element": "H", "charge":  0.417 }
-    ]
-  }
-]
-```
+  Example: [cv_dimer_water.json](./examples/cv_dimer_water.json)
+  ```jsonc
+  [
+    {
+      "system"      : "monomer1",
+      "name"        : "cv",
+      "mol_formula" : "C16H12N3O1",
+      "nAtoms"      : 32,
+      "charge"      : 1,
+      "spin_mult"   : 1
+    },
+    {
+      "system"      : "monomer2",
+      "name"        : "cv",
+      "mol_formula" : "C16H12N3O1",
+      "nAtoms"      : 32,
+      "charge"      : 1,
+      "spin_mult"   : 1
+    },
+    {
+      "system"      : "solvent",
+      "name"        : "water",
+      "mol_formula" : "H2O",
+      "nAtoms"      : 3,
+      "charges": 
+      [
+        { "element": "O", "charge": -0.834 },
+        { "element": "H", "charge":  0.417 },
+        { "element": "H", "charge":  0.417 }
+      ]
+    }
+  ]
+  ```
 
 ---
 
-## `Charges`
+### `Charges`
 
-### a) Inter‑monomer charges (`--mm_monomer`)
+- ### (a) Inter‑monomer charges (`--mm_monomer`)
 
-Plain text with **four** columns (charge x y z) and two header lines (XYZ‑like):
+  Plain text with **four** columns (charge x y z) and two header lines (XYZ‑like):
 
-```text
-<natoms>
-<comment>
--0.123   1.234   0.456   -2.345
-…
-```
+  ```text
+  <natoms>
+  <comment>
+  -0.123   1.234   0.456   -2.345
+  …
+  ```
 
-Provide **N** such files when `--aggregate N` so every monomer can be embedded
-in the charges of all other monomers.
+  Provide **N** such files when `--aggregate N` so every monomer can be embedded
+  in the charges of all other monomers.
 
-### b) Explicit MM solvent (`--mm_solvent charges.xyz`)
+- ### (b) Explicit MM solvent (`--mm_solvent`)
 
-Same format as above but the first column is **charge**, followed by *x y z*.
+  Same format as above but the first column is **charge**, followed by *x y z*.
 
----
-
-## Examples
-
-### 1  Single monomer, VEE, helper XYZ
-
-```bash
-python gen_qm_mm_files.py --single_xyz M1.xyz \
-                --aggregate 1 \
-                --system_info system_info.json \
-                --gauss_keywords route.txt \
-                --output_com monomer \
-                --output_xyz
-```
-
-### 2  Dimer trajectory, EETG, auto MM solvent
-
-```bash
-python gen_qm_mm_files.py --traj_xyz dimer_traj.xyz --frames 10 \
-                --aggregate 2 \
-                --system_info system_info.json \
-                --gauss_keywords route.txt \
-                --qm_solvent 6.0 \
-                --mm_solvent \
-                --eetg \
-                --output_com dimer --output_xyz both
-```
-
-### 3  Trimer, explicit monomer charges & custom solvent charges
-
-```bash
-python gen_qm_mm_files.py --single_xyz trimer.xyz \
-                --aggregate 3 \
-                --system_info system_info.json \
-                --gauss_keywords route.txt \
-                --mm_monomer m1.chg m2.chg m3.chg \
-                --mm_solvent custom_solvent.xyz
-```
-
----
 
 ## Outputs
+- .com files when `--output_com` and `--gauss_keywords` are specified:
+  - monomer `.com` files: `monomer1.com`, `monomer2.com`, etc. : including qm, mm solvent if provided.
+  - dimer `.com` files: `dimer`, etc. : including qm, mm solvent if provided.
+  - EETG file for dimers when `--eetg` is specified.
 
-> monomer `.com` files: `monomer1.com`, `monomer2.com`, etc. : including qm, mm solvent if provided.
+- XYZ files when `--output_xyz` is specified :
+  - monomer XYZ files: `monomer<#>_qm.xyz` and its corresponding `monomer<#>_mm_solvent.xyz`
+  - dimer XYZ files: `dimer_qm.xyz` and its corresponding `dimer_mm_solvent.xyz`
 
-> dimer `.com` files: `dimer`, etc. : including qm, mm solvent if provided.
-
-XYZ files when `--output_xyz` is specified :
-> monomer XYZ files: `monomer<#>_qm.xyz` and its corresponding `monomer<#>_mm_solvent.xyz`
-
-> dimer XYZ files: `dimer_qm.xyz` and its corresponding `dimer_mm_solvent.xyz`
-
-> Temporary files (`_current_frame_data.xyz`) are deleted after use when
-processing trajectories.
-
-> `run.log` is created in the current working directory.
+- Temporary files (`_current_frame_data.xyz`) are deleted after use when processing trajectories.
+- `run.log` is created in the current working directory.
 
 ---
 
@@ -254,5 +211,5 @@ Fatal errors return a non‑zero exit status.
 
 ### Acknowledgements
 
-Developed with ♥ by *Sayan Adhikari* and contributors.
+Developed with ♥ by *Sayan Adhikari*, *Gemini* and *ChatGPT*
 
