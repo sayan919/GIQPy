@@ -1,0 +1,8 @@
+#p CAM-B3LYP/6-31G*                 ! Functional/basis set
+# TDA(Nstates=6)                    ! Excited state calculations
+# Density(Transition=1)             ! S0->S1 transition density
+# Integral(grid=fine)               ! Grid for two-electron integrals
+# SCF(conver=10)                    ! SCF convergence
+# NoSymm                            ! No symmetry keyword for dimers
+# EmpiricalDispersion=GD3           ! Dispersion interaction
+# IOp(9/40=4)                       ! Print eigenvector components threshold

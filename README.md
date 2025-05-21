@@ -4,8 +4,6 @@
 
 ---
 
-## Purpose
-
 GIGPy (Gaussian **I**nput **G**enerator in **Py**thon) is a single‐entry script that converts molecular
 coordinates in XYZ format—either a single structure or a full trajectory—into fully‑formed
 Gaussian `.com` input decks.  It automates QM/MM partitioning, solvent
@@ -41,9 +39,7 @@ excitation‑energy‑transfer (EETG) calculations for molecular aggregates.
 pip install numpy
 ```
 
-*(All other imports are from the Python standard library.)*
-
----
+All other imports are from the Python standard library.
 
 ## Arguments
 
@@ -51,8 +47,8 @@ pip install numpy
 | ---------------- | ---------- | -------------------- | ------- | ------------------------------------------------------------------------------------------- |
 | `--single_xyz`    | str        | —                    | —       | Single-frame XYZ file for one calculation                                                   |
 | `--traj_xyz`      | str        | —                    | —       | Multi-frame XYZ trajectory file                                                             |
-| `--frames`         | int        | —                    | —       | Number of frames to process (required with `--traj_xyz`)                                     |
-| `--aggregate`      | int        | —                    | —       | Number of monomers in the system (e.g., 1 for single monomer, 2 for a dimer)                |
+| `--frames`         | int        | —                    | —       | Number of frames to process (required with `--traj_xyz`)                                   |
+| `--aggregate`      | int        | —                    | —       | Number of monomers in the system (1: monomer, 2: dimer, >= 3: aggregate)             |
 | `--system_info`   | str        | —                    | —       | JSON file with monomer and solvent metadata                                                 |
 | `--keywords_file` | str        | —                    | —       | Plain‑text file with Gaussian route keywords (one line).                                    |
 | `--qm_solvent`    | float      | —                    | 5.0     | Radius cutoff (Å) for QM solvent selection (default: 5.0 Å)                                 |
@@ -60,14 +56,14 @@ pip install numpy
 | `--mm_solvent`    | str        | —                    | —       | Optional: Specify MM solvent charge file or trigger auto‑detection when flag alone is used. |
 | `--output_com`    | str        | monomer, dimer, both | both    | Which Gaussian `.com` files to generate (monomers, aggregate, or both).                     |
 | `--output_xyz`    | str        | monomer, dimer, both | both    | Which descriptive XYZ files to write; flag with no value defaults to `both`.                |
-| `--eetg`           | bool       | —                    | —       | Generate only EETG dimer `.com` (skips VEE files). Requires `--aggregate 2`.                |
+| `--eetg`           | bool       | —                    | —       | Generate only EETG dimer `.com` (skips VEE files). Requires `--aggregate 2`.               |
 
 ---
 Run `python gigpy.py --help` for the exhaustive help text.
 
 ---
 
-## `system_info.json` schema
+## Input file : `system_info.json` 
 
 The file must be a **JSON array** with one entry per monomer followed by **one**
 entry describing the solvent. 
@@ -106,20 +102,9 @@ Example: [cv_dimer_water.json](./examples/cv_dimer_water.json)
 ]
 ```
 
-### Required keys
-
-| Key           | In                | Type      | Notes                                           |
-| ------------- | ----------------- | --------- | ----------------------------------------------- |
-| `name`        | monomer           | str       | Label used in filenames & titles                |
-| `nAtoms`      | monomer + solvent | int       | Atom count in XYZ block                         |
-| `charge`      | monomer           | int/float | Formal charge                                   |
-| `spin_mult`   | monomer           | int       | Spin multiplicity                               |
-| `mol_formula` | monomer + solvent | str       | Empirical formula                               |
-| `charges`     | solvent           | list      | One object per atom with `element` and `charge` |
-
 ---
 
-## Charge‑file formats
+## Input file: charges
 
 ### a) Inter‑monomer charges (`--mm_monomer`)
 
@@ -182,17 +167,19 @@ python gigpy.py --single_xyz trimer.xyz \
 
 ## Outputs
 
-| File               | When written                           | Contents                          |                                |
-| ------------------ | -------------------------------------- | --------------------------------- | ------------------------------ |
-| `monomer<i>.com`   | \`--output\_com monomer                | both\`                            | VEE deck for monomer *i*       |
-| \`\<dimer          | aggregate>.com\`                       | ditto                             | VEE deck for whole system      |
-| \`\<dimer          | aggregate>\_eetg.com\`                 | `--eetg`                          | EETG deck with fragment labels |
-| `*_qm.xyz`         | `--output_xyz`                         | QM atoms (core + QM solvent)      |                                |
-| `*_mm_solvent.xyz` | if MM solvent present & `--output_xyz` | Point charges for visualisation   |                                |
-| `gigpy_run.log`    | always                                 | Full run log with warnings/errors |                                |
+> monomer `.com` files: `monomer1.com`, `monomer2.com`, etc. : including qm, mm solvent if provided.
 
-Temporary files (`_current_frame_data.xyz`) are deleted after use when
+> dimer `.com` files: `dimer`, etc. : including qm, mm solvent if provided.
+
+XYZ files when `--output_xyz` is specified :
+> monomer XYZ files: `monomer1_qm.xyz` and its corresponding `monomer1_mm_solvent.xyz`
+
+> dimer XYZ files: `dimer_qm.xyz` and its corresponding `dimer_mm_solvent.xyz`
+
+> Temporary files (`_current_frame_data.xyz`) are deleted after use when
 processing trajectories.
+
+> `gigpy_run.log` is created in the current working directory.
 
 ---
 
@@ -204,16 +191,6 @@ Fatal errors return a non‑zero exit status.
 
 ---
 
-## Development & contributing
-
-1. Fork and clone the repo.
-2. Create a virtual environment and install `numpy`.
-3. Ensure code passes `flake8` and is formatted with `black`.
-4. Submit a pull request.
-
-Feel free to open issues for feature requests or bug reports.
-
 ### Acknowledgements
 
 Developed with ♥ by *Sayan Adhikari* and contributors.
-
