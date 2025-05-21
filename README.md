@@ -14,11 +14,6 @@ This is single entry script to generate :
   - **Multi-frame**: A multi-frame XYZ trajectory, where each frame is in standard XYZ format.
 - **Code capabilities:**
   - **Simple usage** : generate a .com file for a single frame system (.xyz) with a given set of keywords.
-  - **Configuring solvent region**: (given a single-frame or multi-frame XYZ file with solute in a solvent)
-    - ***`QM solvent`***: user can pick out a localized QM solvent region by specifying a distance cutoff around each atom of the solute. In case of multiple solute molecules, the code will check for common solvent QM atoms between a given pair of localized QM region, and will assign them to one. This explicitely gives a QM region unique to each solute molecule.
-    - ***`MM solvent`***: user can provide a file with the coordinates of the solvent region, or the code can auto-detect the non-QM solvent and assign charges from the `system_info` JSON.
-    - The user can make combinations: no solvent, QM solvent only, MM solvent only, or both QM and MM solvent.
-    - This will be executed for each frame in case of a multi-frame trajectory XYZ file.
   - **Configuring aggregates**:
     - We define, no_of_aggregates: 1 = monomer, 2 = dimer, >=2 = aggregate.
     - **`aggregate files`**: all the solute molecules will be present in the .com file and the .xyz file.
@@ -26,6 +21,12 @@ This is single entry script to generate :
       - other monomer can be skipped
       - other monomer can be included with zero charges in the MM region
       - other monomer can be included with its specific MM charges in the MM region
+  - **Configuring solvent region**: (given a single-frame or multi-frame XYZ file with solute in a solvent)
+    - ***`QM solvent`***: user can pick out a localized QM solvent region by specifying a distance cutoff around each atom of the solute. In case of multiple solute molecules, the code will check for common solvent QM atoms between a given pair of localized QM region, and will assign them to one. This explicitely gives a QM region unique to each solute molecule.
+    - ***`MM solvent`***: user can provide a file with the coordinates of the solvent region, or the code can auto-detect the non-QM solvent and assign charges from the `system_info` JSON.
+    - The user can make combinations: no solvent, QM solvent only, MM solvent only, or both QM and MM solvent.
+    - This will be executed for each frame in case of a multi-frame trajectory XYZ file.
+
 - **Output:**
   - **.com files**:
     - generated for each monomer and dimer (if applicable) with the specified keywords.
