@@ -45,46 +45,24 @@ pip install numpy
 
 ---
 
-## Command‑line interface
+## Arguments
 
-```bash
-python gigpy.py [XYZ SOURCE] --aggregate N \
-                 --system_info system_info.json \
-                 --keywords_file route.txt [OPTIONS]
-```
+| Flag             | Input type | Value                | Default | Description                                                                                 |
+| ---------------- | ---------- | -------------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `--single_xyz`    | str        | —                    | —       | Single-frame XYZ file for one calculation                                                   |
+| `--traj_xyz`      | str        | —                    | —       | Multi-frame XYZ trajectory file                                                             |
+| `--frames`         | int        | —                    | —       | Number of frames to process (required with `--traj_xyz`)                                     |
+| `--aggregate`      | int        | —                    | —       | Number of monomers in the system (e.g., 1 for single monomer, 2 for a dimer)                |
+| `--system_info`   | str        | —                    | —       | JSON file with monomer and solvent metadata                                                 |
+| `--keywords_file` | str        | —                    | —       | Plain‑text file with Gaussian route keywords (one line).                                    |
+| `--qm_solvent`    | float      | —                    | 5.0     | Radius cutoff (Å) for QM solvent selection (default: 5.0 Å)                                 |
+| `--mm_monomer`    | str        | —                    | —       | Optional: Provide charge files for MM embedding of partner monomers (one per monomer).      |
+| `--mm_solvent`    | str        | —                    | —       | Optional: Specify MM solvent charge file or trigger auto‑detection when flag alone is used. |
+| `--output_com`    | str        | monomer, dimer, both | both    | Which Gaussian `.com` files to generate (monomers, aggregate, or both).                     |
+| `--output_xyz`    | str        | monomer, dimer, both | both    | Which descriptive XYZ files to write; flag with no value defaults to `both`.                |
+| `--eetg`           | bool       | —                    | —       | Generate only EETG dimer `.com` (skips VEE files). Requires `--aggregate 2`.                |
 
-### 1  XYZ source *(choose one)*
-
-| Option              | Argument | Description                               |
-| ------------------- | -------- | ----------------------------------------- |
-| `--single_xyz FILE` | path     | Single‑structure XYZ input                |
-| `--traj_xyz FILE`   | path     | Trajectory XYZ input; requires `--frames` |
-
-### 2  Core options
-
-| Option                 | Default | Meaning                                             |
-| ---------------------- | ------- | --------------------------------------------------- |
-| `--frames N`           | –       | Frames to process from the trajectory               |
-| `--aggregate N`        | —       | Number of monomers (1 = monomer, 2 = dimer, …)      |
-| `--system_info FILE`   | —       | Metadata JSON for monomers & solvent (schema below) |
-| `--qm_solvent R`       | `5.0`   | Cut‑off radius (Å) for classifying QM solvent       |
-| `--keywords_file FILE` | —       | Text file with Gaussian route section               |
-
-### 3  QM/MM & calculation‑type options
-
-| Option                       | Takes arg? | Purpose                                             |
-| ---------------------------- | ---------- | --------------------------------------------------- |
-| `--mm_monomer FILE [FILE …]` | list       | Point‑charge files to embed *other* monomers        |
-| `--mm_solvent [FILE]`        | opt.       | MM solvent embedding (auto or explicit file)        |
-| `--eetg`                     | flag       | Write a single EETG deck (requires `--aggregate 2`) |
-
-### 4  Output control
-
-| Option         | Values                     | Function                                        |
-| -------------- | -------------------------- | ----------------------------------------------- |
-| `--output_com` | `monomer \| dimer \| both` | Which `.com` files to generate *(default both)* |
-| `--output_xyz` | `monomer \| dimer \| both` | Helper XYZ export (flag alone ⇒ both)           |
-
+---
 Run `python gigpy.py --help` for the exhaustive help text.
 
 ---
@@ -238,3 +216,4 @@ Feel free to open issues for feature requests or bug reports.
 ### Acknowledgements
 
 Developed with ♥ by *Sayan Adhikari* and contributors.
+
