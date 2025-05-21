@@ -114,7 +114,22 @@ Run `python gigpy.py --help` for the exhaustive help text.
   - Name for detailed log file (default `gigpy_run.log`)
 ---
 
-## Input file : `system_info.json` 
+## Input files
+## `keywords.txt`
+The file must be a **plain text** file with one entry per line.
+Example: [keywords.txt](./examples/keywords.txt)
+```text
+#p CAM-B3LYP/6-31G*                 ! Functional/basis set
+# TDA(Nstates=6)                    ! Excited state calculations
+# Density(Transition=1)             ! S0->S1 transition density
+# Integral(grid=fine)               ! Grid for two-electron integrals
+# SCF(conver=10)                    ! SCF convergence
+# NoSymm                            ! No symmetry keyword for dimers
+# EmpiricalDispersion=GD3           ! Dispersion interaction
+# IOp(9/40=4)                       ! Print eigenvector components threshold
+```
+
+## `system_info.json` 
 
 The file must be a **JSON array** with one entry per monomer followed by **one**
 entry describing the solvent. 
@@ -155,7 +170,7 @@ Example: [cv_dimer_water.json](./examples/cv_dimer_water.json)
 
 ---
 
-## Input file: charges
+## `Charges`
 
 ### a) Inter‑monomer charges (`--mm_monomer`)
 
