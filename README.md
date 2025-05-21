@@ -43,20 +43,22 @@ All other imports are from the Python standard library.
 
 ## Arguments
 
-| Flag             | Input type | Value                | Default | Description                                                                                 |
-| ---------------- | ---------- | -------------------- | ------- | ------------------------------------------------------------------------------------------- |
-| `--single_xyz`    | str        | —                    | —       | Single-frame XYZ file for one calculation                                                   |
-| `--traj_xyz`      | str        | —                    | —       | Multi-frame XYZ trajectory file                                                             |
-| `--frames`         | int        | —                    | —       | Number of frames to process (required with `--traj_xyz`)                                   |
-| `--aggregate`      | int        | —                    | —       | Number of monomers in the system (1: monomer, 2: dimer, >= 3: aggregate)             |
-| `--system_info`   | str        | —                    | —       | JSON file with monomer and solvent metadata                                                 |
-| `--keywords_file` | str        | —                    | —       | Plain‑text file with Gaussian route keywords (one line).                                    |
-| `--qm_solvent`    | float      | —                    | 5.0     | Radius cutoff (Å) for QM solvent selection (default: 5.0 Å)                                 |
-| `--mm_monomer`    | str        | —                    | —       | Optional: Provide charge files for MM embedding of partner monomers (one per monomer).      |
-| `--mm_solvent`    | str        | —                    | —       | Optional: Specify MM solvent charge file or trigger auto‑detection when flag alone is used. |
-| `--output_com`    | str        | monomer, dimer, both | both    | Which Gaussian `.com` files to generate (monomers, aggregate, or both).                     |
-| `--output_xyz`    | str        | monomer, dimer, both | both    | Which descriptive XYZ files to write; flag with no value defaults to `both`.                |
-| `--eetg`           | bool       | —                    | —       | Generate only EETG dimer `.com` (skips VEE files). Requires `--aggregate 2`.               |
+| Flag              | Argument(s)                  | Description                                                                                                                                                                                                                            | Required?               |
+| ----------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `--single_xyz`    | `<file.xyz>`                 | Path to a single‑frame XYZ input file. This file should contain coordinates for all atoms in the system (core monomers followed by all solvent molecules).                                                                             | Yes (or `--traj_xyz`)   |
+| `--traj_xyz`      | `<file.xyz>`                 | Path to a multi‑frame XYZ trajectory file. Each frame should conform to the standard XYZ format (atom count on first line, comment on second, then atom coordinates).                                                                  | Yes (or `--single_xyz`) |
+| `--frames`        | `<N>`                        | Number of frames to process from the trajectory provided with `--traj_xyz`. If omitted, all frames are processed.                                                                                                                      | If `--traj_xyz`         |
+| `--aggregate`     | `<M>`                        | Number of distinct monomer units in the core QM system (1 = monomer, 2 = dimer, …). Must match monomer definitions in `system_info.json`.                                                                                              | Yes                     |
+| `--system_info`   | `<file.json>`                | Path to a JSON file containing metadata for all monomers and the solvent type.                                                                                                                                                         | Yes                     |
+| `--qm_solvent`    | `<radius>`                   | Spherical cutoff radius (Å) around core atoms for selecting QM solvent. Default: 5.0 Å.                                                                                                                                                | No                      |
+| `--mm_monomer`    | `[<file1> <file2> …]`        | Optional: Point‑charge file(s) for embedding by other monomers. Each file line: `charge x y z`. <br>• If `--aggregate 2`, supply two files. <br>• If `--aggregate > 2`, one file per monomer. <br>• Flag alone ⇒ no embedding charges. | No                      |
+| `--mm_solvent`    | `[<file.xyz>]` or flag only  | Optional: Controls MM solvent embedding. <br>1. With file: XYZ‑like, first column charge. <br>2. Flag only: non‑QM solvent treated as MM with charges from `system_info.json`. <br>3. Omit: no MM solvent embedding.                   | No                      |
+| `--eetg`          | —                            | Flag (no arguments). Generates an EETG `.com` for the combined system (requires `--aggregate 2`). Skips aggregate VEE `.com`.                                                                                                          | No                      |
+| `--keywords_file` | `<keywords.txt>`             | Text file where each line is a Gaussian route section keyword (e.g., `#P TD(NStates=10) B3LYP/6-31G(d) OPT FREQ`).                                                                                                                     | Yes                     |
+| `--output_com`    | `monomer \| dimer \| both`   | Which `.com` files to generate.                                                                                                                                                                                                        | No                      |
+| `--output_xyz`    | `[monomer \| dimer \| both]` | Which helper XYZ files to write; flag alone defaults to both.                                                                                                                                                                          | No                      |
+| `--logfile`       | `<filename.txt>`             | Name for the detailed log file. Default: `gigpy_run.txt`.                                                                                                                                                                              | No                      |
+| `--tag`           | `<tag>`                      | Optional: Custom tag for generated `.com` filenames (e.g., `..._TAG.com`).                                                                                                                                                             | No                      |
 
 ---
 Run `python gigpy.py --help` for the exhaustive help text.
@@ -194,3 +196,4 @@ Fatal errors return a non‑zero exit status.
 ### Acknowledgements
 
 Developed with ♥ by *Sayan Adhikari* and contributors.
+

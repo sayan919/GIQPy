@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-GIGPy.py
+GIGPy.py (Gaussian Input Generator in Python)
 
-Combined script for GIGPy (Gaussian Input Generator in PYthon):
-Orchestrates XYZ analysis (QM/MM splitting), Gaussian input writers,
-and generation of auxiliary MM coordinate files.
-Includes auto-detection of non-QM solvent for MM treatment,
-output control for .com and .xyz files, and revised naming conventions.
-Simplified logging: detailed output to gigpy_run.log, clean console.
+Flags :
+  --single_xyz / --traj_xyz : Input coordinate file(s).
+  --system_info <file.json> : Single JSON defining all monomers and solvent properties.
+  --keywords_file <file.txt>: Gaussian route section keywords.
+  --aggregate <M>           : Number of core monomer units.
+  --qm_solvent <radius>     : Defines QM solvent shell by radius (Å).
+  --mm_solvent [file.xyz]   : Defines MM solvent (from file or auto-detected from non-QM solvent if flag is used alone).
+  --mm_monomer [file1 ...]  : Optional: File(s) with "charge x y z" for MM charges of other monomers.
+  --eetg                    : Flag to generate only EETG input for dimers (requires --aggregate=2).
+  --output_com <choice>     : Control .com file generation (monomer, dimer, both; default: both).
+  --output_xyz [choice]     : Control detailed .xyz file generation (monomer, dimer, both, none; default: 'both' if flag given).
+  --tag <TAG_STRING>        : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
+  --logfile <filename>      : Specify log file name (default: gigpy_run.log).
 """
 import argparse
 import os
@@ -34,7 +41,6 @@ JSON_KEY_CHARGES_ARRAY: str = "charges"
 JSON_KEY_ELEMENT: str = "element"       
 
 # --- Global Log File Object ---
-# This will be opened in main()
 log_file_handle: Optional[Any] = None
 
 # --- Type Aliases ---
@@ -55,9 +61,8 @@ def write_to_log(message: str, is_error: bool = False, is_warning: bool = False)
             prefix = "WARNING: "
         try:
             log_file_handle.write(prefix + message + "\n")
-            log_file_handle.flush() # Ensure it's written immediately
+            log_file_handle.flush() 
         except IOError:
-            # Fallback if log writing fails mid-run (should be rare)
             print(f"FALLBACK CONSOLE (log write error): {prefix}{message}", file=sys.stderr)
 
 
@@ -510,16 +515,16 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
     return mm_solvent_charges_list
 
 
-def get_com_suffix(entity_has_added_qm_solvent: bool, system_has_mm_solvent: bool) -> str:
-    """Determines the .com filename suffix based on solvent presence."""
+def get_solvent_descriptor_suffix(entity_has_added_qm_solvent: bool, system_has_mm_solvent: bool) -> str:
+    """Determines the solvent descriptor part of the .com filename."""
     if entity_has_added_qm_solvent and system_has_mm_solvent:
-        return "_qm_mm.com"
+        return "_qm_mm"
     elif entity_has_added_qm_solvent:
-        return "_qm.com"
+        return "_qm"
     elif system_has_mm_solvent:
-        return "_mm.com"
+        return "_mm"
     else:
-        return ".com" 
+        return "" 
 
 
 def write_vee_com(
@@ -644,10 +649,47 @@ def calculate_centroid_distance_between_first_two(core_coords_all_array: CoordTy
     return distance
 
 def main() -> None:
-    global log_file_handle # Allow modification of the global variable
+    global log_file_handle 
 
     parser = argparse.ArgumentParser(
-        description="GIGPy: Generate Gaussian .com and .xyz files from single or trajectory XYZ with QM/MM options." 
+        formatter_class=argparse.RawDescriptionHelpFormatter, # To keep pre-formatted help
+        description="GIGPy: Generate Gaussian .com and .xyz files from single or trajectory XYZ with QM/MM options.",
+        epilog="""
+-------------------------------------------------------------------------------
+GIGPy (Gaussian Input Generator in Python)
+
+Purpose:
+  Automates the generation of Gaussian input files (.com) and auxiliary
+  coordinate files (.xyz) for QM/MM simulations, particularly for
+  Vertical Excitation Energy (VEE) and Excitation Energy Transfer (EETG)
+  calculations. It processes single XYZ or trajectory XYZ files, handles
+  QM/MM solvent partitioning, and allows for various embedding schemes.
+
+Quick Usage Example:
+  python GIGPy.py --traj_xyz inputs/traj.xyz --frames 10 --aggregate 2 \\
+    --system_info inputs/system.json --keywords_file inputs/keywords.txt \\
+    --qm_solvent 4.0 --mm_solvent --tag MyRun --output_com both
+
+Core Flags & Concepts (compared to a generic `gen_gauss.py`):
+  --single_xyz / --traj_xyz : Input coordinate file(s).
+                                (Corresponds to concepts like `--xyz_dimer`)
+  --system_info <file.json> : Single JSON defining all monomers and solvent properties.
+                                (Replaces concepts like separate `--monomer_info monomer1.json monomer2.json`)
+  --keywords_file <file.txt>: Gaussian route section keywords.
+                                (PCM environment details, like from an `--env` flag, should be included here).
+  --aggregate <M>           : Number of core monomer units.
+  --qm_solvent <radius>     : Defines QM solvent shell by radius (Å).
+                                (Provides more specific QM solvent inclusion than a simple `--qm` flag).
+  --mm_solvent [file.xyz]   : Defines MM solvent (from file or auto-detected from non-QM solvent if flag is used alone).
+                                (Corresponds to concepts like `--mm mm_charges.xyz`).
+  --mm_monomer [file1 ...]  : Optional: File(s) with "charge x y z" for MM charges of other monomers.
+  --eetg                    : Flag to generate only EETG input for dimers (requires --aggregate=2).
+  --output_com <choice>     : Control .com file generation (monomer, dimer, both; default: both).
+  --output_xyz [choice]     : Control detailed .xyz file generation (monomer, dimer, both, none; default: 'both' if flag given).
+  --tag <TAG_STRING>        : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
+  --logfile <filename>      : Specify log file name (default: gigpy_run.txt).
+-------------------------------------------------------------------------------
+        """
     )
     group_xyz_input = parser.add_mutually_exclusive_group(required=True)
     group_xyz_input.add_argument('--single_xyz', type=str, help='Single-frame XYZ file for one calculation')
@@ -678,6 +720,8 @@ def main() -> None:
                         help='Which Gaussian .com files to generate: for monomers, for the combined system (dimer/aggregate), or both. Defaults to "both".')
     parser.add_argument('--output_xyz', nargs='?', choices=['monomer', 'dimer', 'both'], const='both', default=None, 
                         help='Which detailed XYZ files to generate (e.g., _qm.xyz, _mm_solvent.xyz). If flag is present without value, defaults to "both". If flag absent, no detailed XYZs are generated.')
+    parser.add_argument('--tag', type=str, default="",
+                        help='Optional: Custom tag to add to the generated .com filenames (e.g., monomer1_qm_mm_TAG.com).')
     
     args = parser.parse_args()
 
@@ -749,6 +793,8 @@ def main() -> None:
         raise ValueError(msg)
 
     combined_system_term: str = "dimer" if args.aggregate == 2 else "aggregate"
+    tag_suffix_for_filename = f"_{args.tag}" if args.tag else ""
+
 
     if args.traj_xyz and total_frames_to_process > 0 :
         sys.stdout.write(f"Processed Frames: 0 / {total_frames_to_process}")
@@ -763,8 +809,8 @@ def main() -> None:
         logged_output_dir_name = frame_id_str if frame_id_str else "." 
         
         frame_processing_message = f"--- Processing Frame {frame_idx + 1} / {total_frames_to_process} ({'ID: '+frame_id_str if frame_id_str else 'single file'}) -> Output Dir: '{logged_output_dir_name}' ---"
-        print(frame_processing_message) # To console
-        write_to_log(f"\n\n{frame_processing_message}") # To log file with newlines
+        print(frame_processing_message) 
+        write_to_log(f"\n\n{frame_processing_message}") 
 
 
         monomer_qm_regions: List[Tuple[AtomListType, CoordType]]
@@ -850,8 +896,7 @@ def main() -> None:
                 print(f"WARNING: {warn_msg}")
                 write_to_log(warn_msg, is_warning=True)
         
-        # --- XYZ File Generation Control ---
-        if args.output_xyz: # Check if flag was given
+        if args.output_xyz: 
             generate_monomer_xyz = args.output_xyz in ['monomer', 'both']
             generate_aggregate_xyz = args.output_xyz in ['dimer', 'both'] 
 
@@ -928,8 +973,8 @@ def main() -> None:
                 write_to_log(f"Writing EETG {combined_system_term} .com file...") 
                 eetg_has_qm_solvent_in_fragments = qm_solvent_flags.get('monomer_0_has_added_qm_solvent', False) or \
                                                  qm_solvent_flags.get('monomer_1_has_added_qm_solvent', False)
-                eetg_suffix = get_com_suffix(eetg_has_qm_solvent_in_fragments, system_has_mm_solvent)
-                eetg_filename = f"{combined_system_term}_eetg{eetg_suffix}"
+                solvent_desc_suffix = get_solvent_descriptor_suffix(eetg_has_qm_solvent_in_fragments, system_has_mm_solvent)
+                eetg_filename = f"{combined_system_term}_eetg{solvent_desc_suffix}{tag_suffix_for_filename}.com"
                 eetg_title = f"{aggregate_title_base} EETG Calculation" 
                 
                 m1_atoms_eetg, m1_coords_eetg = monomer_qm_regions[0]
@@ -957,8 +1002,8 @@ def main() -> None:
                     mono_qm_atoms, mono_qm_coords = monomer_qm_regions[i]
                     
                     monomer_has_added_qm_solvent = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
-                    mono_com_suffix = get_com_suffix(monomer_has_added_qm_solvent, system_has_mm_solvent)
-                    mono_vee_filename = f"monomer{i+1}{mono_com_suffix}"
+                    solvent_desc_suffix = get_solvent_descriptor_suffix(monomer_has_added_qm_solvent, system_has_mm_solvent)
+                    mono_vee_filename = f"monomer{i+1}{solvent_desc_suffix}{tag_suffix_for_filename}.com"
                     mono_vee_title = f"{mono_meta.get(JSON_KEY_NAME)} monomer{i+1} VEE" 
                     
                     write_vee_com(
@@ -977,8 +1022,8 @@ def main() -> None:
         if generate_aggregate_com_files and not args.eetg:
             write_to_log(f"Writing VEE {combined_system_term} .com file...") 
             aggregate_has_added_qm_solvent = qm_solvent_flags.get('aggregate_has_added_qm_solvent', False)
-            agg_com_suffix = get_com_suffix(aggregate_has_added_qm_solvent, system_has_mm_solvent)
-            agg_vee_filename = f"{combined_system_term}{agg_com_suffix}"
+            solvent_desc_suffix = get_solvent_descriptor_suffix(aggregate_has_added_qm_solvent, system_has_mm_solvent)
+            agg_vee_filename = f"{combined_system_term}{solvent_desc_suffix}{tag_suffix_for_filename}.com"
             agg_vee_title = f"{aggregate_title_base} VEE Calculation" 
             
             agg_qm_atoms, agg_qm_coords = aggregate_qm_region
@@ -1019,12 +1064,10 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        # Ensure critical errors are logged before exiting, especially if logger setup failed partially
         err_msg_critical = f"An unhandled error occurred: {e}"
         print(f"ERROR: {err_msg_critical}", file=sys.stderr)
-        if log_file_handle: # If log file was opened, try to write there too
+        if log_file_handle: 
             write_to_log(err_msg_critical, is_error=True)
-            # Attempt to write traceback as well
             import traceback
             write_to_log(traceback.format_exc())
             log_file_handle.close()
