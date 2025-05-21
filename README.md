@@ -36,16 +36,16 @@ This is single entry script to generate :
 
 
 ## Arguments
-- `--single_xyz`: (Required)
+- `--single_xyz`:
   - ***Number of inputs:*** 1 file
   - Path to a single-frame XYZ file containing coordinates for entire system (core monomers + solvent)
----
-- `--traj_xyz`: (Required)
+
+ **OR (one of the two is required)**
+- `--traj_xyz`: 
   - ***Number of inputs:*** 1 file
   - Path to a multi-frame XYZ trajectory; each frame in standard XYZ format
-  - This and `--single_xyz` can not be used together
 ---
-- `--frames`: (Required)
+- `--frames`: (Only used with `--traj_xyz`)
   - ***Number of inputs:*** 1 integer
   - Number of frames to process when `--traj_xyz` is used; if omitted all frames are processed
 ---
@@ -82,7 +82,7 @@ This is single entry script to generate :
   - `dimer`   : write only dimer .com files with QM and MM solvent if provided
   - `both`    : write both monomer and dimer .com files 
 ---
-- `--gauss_keywords`: (optional; must be provided if `--output_com` is used)
+- `--gauss_keywords`: (only used with `--output_com`)
   - ***Number of inputs:*** 1 file
   - Plain-text file of Gaussian route section keywords (one per line)
   - Include PCM/solvation options here as needed
