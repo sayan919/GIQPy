@@ -7,14 +7,21 @@ Flags :
   --system_info <file.json> : Single JSON defining all monomers and solvent properties.
   --keywords_file <file.txt>: Gaussian route section keywords.
   --aggregate <M>           : Number of core monomer units.
-  --qm_solvent <radius>     : Defines QM solvent shell by radius (Å).
-  --mm_solvent [file.xyz]   : Defines MM solvent (from file or auto-detected from non-QM solvent if flag is used alone).
-  --mm_monomer [file1 ...]  : Optional: File(s) with "charge x y z" for MM charges of other monomers.
-  --eetg                    : Flag to generate only EETG input for dimers (requires --aggregate=2).
-  --output_com <choice>     : Control .com file generation (monomer, dimer, both; default: both).
-  --output_xyz [choice]     : Control detailed .xyz file generation (monomer, dimer, both, none; default: 'both' if flag given).
-  --tag <TAG_STRING>        : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
-  --logfile <filename>      : Specify log file name (default: gigpy_run.log).
+  --qm_solvent <radius>      : Defines QM solvent shell by radius (Å) around core atoms.
+                              This provides explicit QM solvent inclusion.
+  --mm_solvent [file.xyz]    : Optional. Defines MM solvent.
+                              - If path provided: XYZ-like file (charge x y z per line, skips 2 headers).
+                              - If flag used alone: Auto-detects non-QM solvent from input XYZ
+                                and uses charges from system_info.json.
+  --mm_monomer [0|file1 ...] : Optional. Defines MM charges for embedding from other monomers.
+                              - If '0': Embeds other monomers with zero charges at their atomic positions.
+                              - If file(s) provided: File(s) with "charge x y z" for MM charges.
+  --eetg                     : Flag to generate only EETG input for dimers (requires --aggregate=2).
+  --output_com <choice>      : Control .com file generation (monomer, dimer, both; default: both).
+  --output_xyz [choice]      : Control detailed .xyz file generation (monomer, dimer, both, none; default: 'both' if flag given).
+  --tag <TAG_STRING>         : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
+  --logfile <filename>       : Specify log file name (default: gigpy_run.txt).
+
 """
 import argparse
 import os
@@ -29,7 +36,7 @@ from typing import List, Tuple, Optional, Dict, Any, Iterator, Union
 # --- Constants ---
 AUTO_MM_SOLVENT_TRIGGER: str = "auto_detect_mm_solvent_from_input_xyz"
 TEMP_FRAME_XYZ_FILENAME: str = "_current_frame_data.xyz"
-LOG_FILENAME: str = "gigpy_run.log" 
+LOG_FILENAME: str = "gigpy_run.txt" 
 
 # --- JSON Keys Constants ---
 JSON_KEY_NAME: str = "name"
@@ -516,7 +523,7 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
 
 
 def get_solvent_descriptor_suffix(entity_has_added_qm_solvent: bool, system_has_mm_solvent: bool) -> str:
-    """Determines the solvent descriptor part of the .com filename."""
+    """Determines the solvent descriptor part of the .com filename (without .com extension)."""
     if entity_has_added_qm_solvent and system_has_mm_solvent:
         return "_qm_mm"
     elif entity_has_added_qm_solvent:
@@ -652,7 +659,7 @@ def main() -> None:
     global log_file_handle 
 
     parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter, # To keep pre-formatted help
+        formatter_class=argparse.RawDescriptionHelpFormatter, 
         description="GIGPy: Generate Gaussian .com and .xyz files from single or trajectory XYZ with QM/MM options.",
         epilog="""
 -------------------------------------------------------------------------------
@@ -670,24 +677,36 @@ Quick Usage Example:
     --system_info inputs/system.json --keywords_file inputs/keywords.txt \\
     --qm_solvent 4.0 --mm_solvent --tag MyRun --output_com both
 
-Core Flags & Concepts (compared to a generic `gen_gauss.py`):
-  --single_xyz / --traj_xyz : Input coordinate file(s).
-                                (Corresponds to concepts like `--xyz_dimer`)
-  --system_info <file.json> : Single JSON defining all monomers and solvent properties.
-                                (Replaces concepts like separate `--monomer_info monomer1.json monomer2.json`)
-  --keywords_file <file.txt>: Gaussian route section keywords.
-                                (PCM environment details, like from an `--env` flag, should be included here).
-  --aggregate <M>           : Number of core monomer units.
-  --qm_solvent <radius>     : Defines QM solvent shell by radius (Å).
-                                (Provides more specific QM solvent inclusion than a simple `--qm` flag).
-  --mm_solvent [file.xyz]   : Defines MM solvent (from file or auto-detected from non-QM solvent if flag is used alone).
-                                (Corresponds to concepts like `--mm mm_charges.xyz`).
-  --mm_monomer [file1 ...]  : Optional: File(s) with "charge x y z" for MM charges of other monomers.
-  --eetg                    : Flag to generate only EETG input for dimers (requires --aggregate=2).
-  --output_com <choice>     : Control .com file generation (monomer, dimer, both; default: both).
-  --output_xyz [choice]     : Control detailed .xyz file generation (monomer, dimer, both, none; default: 'both' if flag given).
-  --tag <TAG_STRING>        : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
-  --logfile <filename>      : Specify log file name (default: gigpy_run.txt).
+Core Flags & Concepts:
+  --single_xyz <file.xyz> or --traj_xyz <file.xyz> :
+                                  Input coordinate file(s).
+                                  GIGPy uses these for the entire system (monomers + solvent).
+  --frames <N>                    : Number of frames if --traj_xyz is used.
+  --aggregate <M>               : Number of core monomer units (e.g., 2 for a dimer).
+  --system_info <file.json>     : Single JSON defining all monomers and solvent properties.
+                                  This is GIGPy's comprehensive way to get monomer details
+                                  (name, nAtoms, charge, spin_mult, mol_formula) and
+                                  solvent details (name, mol_formula, nAtoms, charges per atom).
+  --keywords_file <file.txt>    : Text file with Gaussian route section keywords.
+                                  Each line is a keyword.
+                                  Note: PCM solvent environment details, like from an older `--env` flag,
+                                  should be included directly within these Gaussian keywords
+                                  (e.g., SCRF=(PCM,Solvent=Water)).
+  --qm_solvent <radius>         : Defines QM solvent shell by radius (Å) around core atoms.
+                                  This provides explicit QM solvent inclusion.
+  --mm_solvent [file.xyz]       : Optional. Defines MM solvent.
+                                  - If path provided: XYZ-like file (charge x y z per line, skips 2 headers).
+                                  - If flag used alone: Auto-detects non-QM solvent from input XYZ
+                                    and uses charges from system_info.json.
+  --mm_monomer [0|file1 ...]    : Optional. Defines MM charges for embedding from other monomers.
+                                  - If '0': Embeds other monomers with zero charges at their atomic positions.
+                                  - If file(s) provided: File(s) with "charge x y z" for MM charges.
+  --eetg                        : Flag to generate only EETG input for dimers (requires --aggregate=2).
+  --output_com <choice>         : Control .com file generation (monomer, dimer, both; default: both).
+  --output_xyz [choice]         : Control detailed .xyz file generation (monomer, dimer, both, none; 
+                                  If flag is present without value, defaults to "both". If flag absent, no detailed XYZs are generated.)
+  --tag <TAG_STRING>            : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
+  --logfile <filename>          : Specify log file name (default: gigpy_run.txt).
 -------------------------------------------------------------------------------
         """
     )
@@ -704,8 +723,10 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
     parser.add_argument('--qm_solvent', type=float, default=5.0,
                         help='Radius cutoff (Å) for QM solvent selection (default: 5.0 Å)')
     parser.add_argument('--mm_monomer', type=str, nargs='*',
-                        help='Optional: Provide charge files (format: "charge x y z" per line) for other monomer embedding. '
-                             'If --aggregate=2, provide two files (charges for M1, charges for M2). ')
+                        help="Optional: Defines MM charges for embedding from other monomers. "
+                             "Provide file(s) with 'charge x y z' format. "
+                             "If --aggregate=2, provide two files (for M1, for M2). "
+                             "If '0' is the only argument, embed other monomers with zero charges.")
     parser.add_argument('--mm_solvent', type=str, nargs='?', const=AUTO_MM_SOLVENT_TRIGGER, default=None,
                         help='Optional: Control MM solvent. '
                              '1. Provide an XYZ-like file (charge x y z per line, skip 2 header lines) of MM solvent point charges. '
@@ -721,7 +742,7 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
     parser.add_argument('--output_xyz', nargs='?', choices=['monomer', 'dimer', 'both'], const='both', default=None, 
                         help='Which detailed XYZ files to generate (e.g., _qm.xyz, _mm_solvent.xyz). If flag is present without value, defaults to "both". If flag absent, no detailed XYZs are generated.')
     parser.add_argument('--tag', type=str, default="",
-                        help='Optional: Custom tag to add to the generated .com filenames (e.g., monomer1_qm_mm_TAG.com).')
+                        help='Optional: Custom tag to add at the end of generated .com filenames (e.g., monomer1_qm_mm_TAG.com).')
     
     args = parser.parse_args()
 
@@ -793,7 +814,7 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
         raise ValueError(msg)
 
     combined_system_term: str = "dimer" if args.aggregate == 2 else "aggregate"
-    tag_suffix_for_filename = f"_{args.tag}" if args.tag else ""
+    tag_for_filename = f"_{args.tag}" if args.tag else "" # Prepend underscore if tag exists
 
 
     if args.traj_xyz and total_frames_to_process > 0 :
@@ -939,10 +960,33 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
 
         mm_embedding_for_monomer: List[List[MMChargeTupleType]] = [[] for _ in range(args.aggregate)] 
         if args.mm_monomer is not None:
-            if len(args.mm_monomer) == args.aggregate and args.aggregate > 0: 
+            if args.mm_monomer == ['0']: # Zero charge embedding
+                write_to_log("Applying zero charges for other-monomer embedding as per --mm_monomer 0.")
+                current_atom_idx = 0
+                core_monomer_coords_list: List[CoordType] = []
+                for num_atoms_in_mono in n_atoms_per_monomer_for_dist_calc: # n_atoms_per_monomer_for_dist_calc is n_atoms_per_monomer_list
+                    core_monomer_coords_list.append(
+                        core_coords_for_dist_calc[current_atom_idx : current_atom_idx + num_atoms_in_mono]
+                    )
+                    current_atom_idx += num_atoms_in_mono
+                
+                if args.aggregate == 1:
+                    write_to_log("Note: --mm_monomer 0 specified with --aggregate=1. No other monomers to embed with zero charges.", is_warning=True)
+                else: 
+                    for i in range(args.aggregate): 
+                        embedding_charges_for_monomer_i: List[MMChargeTupleType] = []
+                        for j in range(args.aggregate): 
+                            if i == j:
+                                continue
+                            other_monomer_coords = core_monomer_coords_list[j]
+                            for coord_row in other_monomer_coords:
+                                embedding_charges_for_monomer_i.append((coord_row[0], coord_row[1], coord_row[2], 0.0))
+                        mm_embedding_for_monomer[i] = embedding_charges_for_monomer_i
+
+            elif len(args.mm_monomer) == args.aggregate and args.aggregate > 0: 
                 all_monomer_explicit_charges = [load_monomer_charges_from_file(f) for f in args.mm_monomer]
                 if args.aggregate == 1:
-                     warn_msg = "--mm_monomer provided with --aggregate=1. This charge file will not be used for inter-monomer embedding."
+                     warn_msg = "--mm_monomer provided with file(s) for --aggregate=1. This charge file will not be used for inter-monomer embedding."
                      print(f"WARNING: {warn_msg}")
                      write_to_log(warn_msg, is_warning=True)
                 elif args.aggregate == 2: 
@@ -956,11 +1000,14 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
                             combined_embedding_charges.extend(all_monomer_explicit_charges[j])
                         mm_embedding_for_monomer[i] = combined_embedding_charges
             elif len(args.mm_monomer) == 0: 
-                 write_to_log("Note: --mm_monomer was specified without files. No inter-monomer MM charges will be applied.") 
-            else: 
-                warn_msg = f"--mm_monomer was given with {len(args.mm_monomer)} file(s). Expected 0 or {args.aggregate} files. MM monomer embedding might be skipped or incorrect."
+                 write_to_log("Note: --mm_monomer was specified without files (empty list). No inter-monomer MM charges will be applied.") 
+            else: # Incorrect number of files (not '0', not matching aggregate count, not empty list)
+                warn_msg = (f"--mm_monomer was given with {len(args.mm_monomer)} file(s) "
+                            f"(and not as '0'). Expected 0, 1 (for '0' option), or {args.aggregate} files. "
+                            f"MM monomer embedding might be skipped or incorrect.")
                 print(f"WARNING: {warn_msg}")
                 write_to_log(warn_msg, is_warning=True)
+
 
         total_sys_charge: Union[int, float] = sum(m[JSON_KEY_CHARGE] for m in monomers_metadata_list)
         total_sys_spin: int = int(np.prod([m[JSON_KEY_SPIN_MULT] for m in monomers_metadata_list])) if monomers_metadata_list else 1
@@ -974,7 +1021,7 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
                 eetg_has_qm_solvent_in_fragments = qm_solvent_flags.get('monomer_0_has_added_qm_solvent', False) or \
                                                  qm_solvent_flags.get('monomer_1_has_added_qm_solvent', False)
                 solvent_desc_suffix = get_solvent_descriptor_suffix(eetg_has_qm_solvent_in_fragments, system_has_mm_solvent)
-                eetg_filename = f"{combined_system_term}_eetg{solvent_desc_suffix}{tag_suffix_for_filename}.com"
+                eetg_filename = f"{combined_system_term}_eetg{solvent_desc_suffix}{tag_for_filename}.com"
                 eetg_title = f"{aggregate_title_base} EETG Calculation" 
                 
                 m1_atoms_eetg, m1_coords_eetg = monomer_qm_regions[0]
@@ -1003,7 +1050,7 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
                     
                     monomer_has_added_qm_solvent = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
                     solvent_desc_suffix = get_solvent_descriptor_suffix(monomer_has_added_qm_solvent, system_has_mm_solvent)
-                    mono_vee_filename = f"monomer{i+1}{solvent_desc_suffix}{tag_suffix_for_filename}.com"
+                    mono_vee_filename = f"monomer{i+1}{solvent_desc_suffix}{tag_for_filename}.com"
                     mono_vee_title = f"{mono_meta.get(JSON_KEY_NAME)} monomer{i+1} VEE" 
                     
                     write_vee_com(
@@ -1023,7 +1070,7 @@ Core Flags & Concepts (compared to a generic `gen_gauss.py`):
             write_to_log(f"Writing VEE {combined_system_term} .com file...") 
             aggregate_has_added_qm_solvent = qm_solvent_flags.get('aggregate_has_added_qm_solvent', False)
             solvent_desc_suffix = get_solvent_descriptor_suffix(aggregate_has_added_qm_solvent, system_has_mm_solvent)
-            agg_vee_filename = f"{combined_system_term}{solvent_desc_suffix}{tag_suffix_for_filename}.com"
+            agg_vee_filename = f"{combined_system_term}{solvent_desc_suffix}{tag_for_filename}.com"
             agg_vee_title = f"{aggregate_title_base} VEE Calculation" 
             
             agg_qm_atoms, agg_qm_coords = aggregate_qm_region
