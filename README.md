@@ -1,4 +1,4 @@
-# Generate QM/MM System Input Files for Gaussian or TeraChem
+# GIQPy: Generate Inputs for QM/MM systems
 
 **Version**: 1.0  |  **Date**: 20 May 2025
 
