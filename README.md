@@ -1,8 +1,6 @@
 # GIQPy: Generate Inputs for QM/MM systems
 
-**Version**: 1.0  |  **Date**: 20 May 2025
 
----
 This is single entry script to generate :
 - `Gaussian`: **.com** files with given set of keywords and proper formatting for a given system configuration.
 - `TeraChem`: **.xyz** files for given system configuration, which can be used paired with **.in** keywords file.
@@ -53,6 +51,12 @@ This is single entry script to generate :
   - ***Number of inputs:*** 1 integer
   - Number of core monomer units.
   - Filename if aggregate=1: monomer, 2: dimer, >=2: aggregate
+---
+- `--qm_aggregate_xyz`: (optional)
+  - ***Number of inputs:*** 1 file
+  - Path to the custom QM aggregate XYZ file.
+  - If provided, this file will be used to define the QM region for the aggregate.
+  - If not provided, the code will use the `--single_xyz` or `--traj_xyz` file to define the QM region.
 ---
 - `--system_info`: (Required)
   - ***Number of inputs:*** 1 file
