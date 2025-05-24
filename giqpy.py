@@ -585,9 +585,9 @@ def write_com_file( # Renamed from write_vee_com and write_eetg_com to be more g
     """
     final_keywords = list(keywords) 
     if mm_charges_list:
-        charge_keyword_present = any("#charge" in kw.lower() for kw in final_keywords)
+        charge_keyword_present = any("# charge" in kw.lower() for kw in final_keywords)
         if not charge_keyword_present:
-            final_keywords.append("#charge ; MM charges present for QM/MM embedding")
+            final_keywords.append("# charge ! MM charges present for QM/MM embedding")
 
     try:
         with open(path, 'w') as f:
