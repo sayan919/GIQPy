@@ -203,8 +203,8 @@ entry describing the solvent.
 
 ## Logging & error handling
 
-GIGPy writes a concise console progress bar and mirrors all
-messages—including stack traces on uncaught exceptions—to `gigpy_run.log`.
+GIQPy writes a concise console progress bar and mirrors all
+messages—including stack traces on uncaught exceptions—to `giqpy_run.log`.
 Fatal errors return a non‑zero exit status.
 
 ---
