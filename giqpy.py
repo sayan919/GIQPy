@@ -43,7 +43,7 @@ from typing import List, Tuple, Optional, Dict, Any, Iterator, Union
 # --- Constants ---
 AUTO_MM_SOLVENT_TRIGGER: str = "auto_detect_mm_solvent_from_input_xyz"
 TEMP_FRAME_XYZ_FILENAME: str = "_current_frame_data.xyz"
-LOG_FILENAME: str = "run.log" 
+LOG_FILENAME: str = "giqpy_run.log"
 
 # --- JSON Keys Constants ---
 JSON_KEY_NAME: str = "name"
