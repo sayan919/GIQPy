@@ -1,30 +1,45 @@
 #!/usr/bin/env python3
 #=================================================================================================
 # Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
-#=================================================================================================
+#==================================================================================================
 """
 Generate Inputs for QM/MM systems for Gaussian or TeraChem
 
 Flags:
-    --single_xyz / --traj_xyz  : Input coordinate file(s).
-    --frames                   : Number of frames (default: all; must be used with --traj_xyz).
-    --system_info              : Single JSON defining all monomers and solvent properties.
-    --aggregate                : Number of core monomer units.
-    --qm_aggregate_xyz         : Optional: Use coordinates from this file for the core aggregate,
-                                  overriding those from the main input XYZ. Atom order must match.
-    --qm_solvent               : Defines QM solvent shell by radius (Å) around core atoms.
-    --mm_solvent               : Optional. Defines MM solvent.
+    --single_xyz (Required) : Single frame XYZ file (or --traj_xyz).
+    OR,
+    --traj_xyz (Required) : Multi-frame trajectory XYZ file.
+
+    --frames (Required with --traj_xyz) : Number of frames (default: all).
+    
+    --system_info (Required) : Single JSON defining all monomers and solvent properties.
+    
+    --aggregate (Required) : Number of core monomer units.
+    
+    --qm_aggregate_xyz (Optional) : Use coordinates from this file for the core aggregate, 
+                                    overriding from the main input XYZ. Atom order must match.
+    
+    --qm_solvent (Optional) : Defines QM solvent shell by radius (Å) around core atoms.
+    
+    --mm_solvent (Optional) : Defines MM solvent.
                                 - path provided: XYZ-like file (charge x y z per line, skips 2 headers).
                                 - flag used alone: non-QM solvent with charges from system_info.json.
-    --mm_monomer               : Optional. Defines MM charges for embedding from other monomers.
+    
+    --mm_monomer (Optional) : Defines MM charges for embedding from other monomers.
                                 - '0': Embeds other monomers with zero charges at their atomic positions.
                                 - File(s) provided: File(s) with "charge x y z" for MM charges.
-    --eetg                     : Flag to generate only EETG input for dimers (requires --aggregate=2).
-    --output_com               : monomer/dimer/both; (default: both).
-    --gauss_keywords           : Gaussian keywords (must be used with --output_com).
-    --output_xyz               : monomer/dimer/both/none; (default: both).
-    --tag                      : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
-    --logfile                  : Specify log file name (default: run.log).
+    
+    --eetg (Optional) : Flag to generate only EETG input for dimers (requires --aggregate=2).
+    
+    --output_com (Optional) : monomer/dimer/both; (default: both).
+    OR,
+    --output_xyz (Optional) : monomer/dimer/both/none; (default: both).
+
+    --gauss_keywords (Required with --output_com) : Gaussian keywords (must be used with --output_com).
+    
+    --tag (Optional) : custom tag for generated .com filenames (e.g., ..._TAG.com).
+    
+    --logfile (Optional) : Specify log file name (default: run.log).
 
 """
 import argparse
