@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
+#=================================================================================================
+# Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
+#=================================================================================================
 """
-GIQPY   : Generate Inputs for QM/MM systems for Gaussian or TeraChem
-Author  : Sayan Adhikari
-LLM     : ChatGPT and Gemini
-Email   : sayanadh919@gmail.com
-Lab     : Dr. Christine Isborn
-Place   : University of California, Merced
-Date    : 23rd May 2025
+Generate Inputs for QM/MM systems for Gaussian or TeraChem
 
-Flags   :
+Flags:
     --single_xyz / --traj_xyz  : Input coordinate file(s).
     --frames                   : Number of frames (default: all; must be used with --traj_xyz).
     --system_info              : Single JSON defining all monomers and solvent properties.
