@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #=================================================================================================
 # Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
-#==================================================================================================
+#=================================================================================================
 """
 Generate Inputs for QM/MM systems for Gaussian or TeraChem
 
@@ -626,7 +626,7 @@ def write_com_file( # Renamed from write_vee_com and write_eetg_com to be more g
             if mm_charges_list: 
                 f.write("\n") 
                 for x_mm, y_mm, z_mm, q_mm in mm_charges_list: 
-                    f.write(f" {x_mm:12.5f} {y_mm:12.5f} {z_mm:12.5f} {q_mm:12.5f}\n")
+                    f.write(f" {x_mm:14.5f} {y_mm:12.5f} {z_mm:12.5f} {q_mm:12.5f}\n")
             
             f.write("\n") 
     except IOError as e:
@@ -1082,7 +1082,7 @@ Core Flags:
                 eetg_filename = f"{eetg_filename_base}{tag_for_filename}.com"
 
                 solvent_info_for_eetg_title = f" in {solvent_name_str}" if (eetg_has_qm_solvent_in_fragments or system_has_mm_solvent) else ""
-                eetg_title = f"{aggregate_title_base}{solvent_info_for_eetg_title} EETG Calculation".strip()
+                eetg_title = f"{aggregate_title_base}{solvent_info_for_eetg_title} EET Analysis".strip()
                 
                 m1_atoms_eetg, m1_coords_eetg = monomer_qm_regions[0]
                 m2_atoms_eetg, m2_coords_eetg = monomer_qm_regions[1]
@@ -1115,7 +1115,7 @@ Core Flags:
                     mono_vee_filename = f"{mono_vee_filename_base}{tag_for_filename}.com"
                     
                     solvent_info_for_mono_title = f" in {solvent_name_str}" if (monomer_has_added_qm_solvent or system_has_mm_solvent) else ""
-                    mono_vee_title = f"{mono_meta.get(JSON_KEY_NAME)} monomer{i+1}{solvent_info_for_mono_title} Calculation".strip() # Generalized from VEE
+                    mono_vee_title = f"{mono_meta.get(JSON_KEY_NAME)} monomer{i+1}{solvent_info_for_mono_title}".strip() # Generalized from VEE
                     
                     # Combine mm_embedding for this monomer and system-wide mm_solvent
                     all_mm_for_monomer = []
@@ -1151,7 +1151,7 @@ Core Flags:
             agg_vee_filename = f"{agg_vee_filename_base}{tag_for_filename}.com"
 
             solvent_info_for_agg_title = f" in {solvent_name_str}" if (aggregate_has_added_qm_solvent or system_has_mm_solvent) else ""
-            agg_vee_title = f"{aggregate_title_base}{solvent_info_for_agg_title} Calculation".strip() # Generalized from VEE
+            agg_vee_title = f"{aggregate_title_base}{solvent_info_for_agg_title}".strip() # Generalized from VEE
             
             agg_qm_atoms, agg_qm_coords = aggregate_qm_region
             
