@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #=================================================================================================
-# Sayan Adhikari | May 27, 2025 | https://github.com/sayan919
+# Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
 #=================================================================================================
 """
 Generate Inputs for QM/MM systems for Gaussian or TeraChem
@@ -1136,8 +1136,8 @@ Other:
             if actual_gen_aggregate_xyz: # Use the specific flag
                 agg_qm_atoms_xyz, agg_qm_coords_xyz = aggregate_qm_region
                 qm_sol_desc_agg = f" + qm {solvent_name_str}" if qm_solvent_flags.get('aggregate_has_added_qm_solvent') else ""
-                xyz_comment_for_aggregate_qm = f"{aggregate_xyz_comment_base} qm region{qm_sol_desc_agg}"
-                write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_qm_region.xyz'), 
+                xyz_comment_for_aggregate_qm = f"{aggregate_xyz_comment_base} qm {qm_sol_desc_agg}"
+                write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_qm.xyz'), 
                           agg_qm_atoms_xyz, agg_qm_coords_xyz, 
                           comment=xyz_comment_for_aggregate_qm)
             
@@ -1146,8 +1146,8 @@ Other:
                     monomer_name_from_meta = monomers_metadata_list[i].get(JSON_KEY_NAME, f'm{i+1}')
                     mono_has_qm_sol = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
                     qm_sol_desc_mono = f" + its unique qm {solvent_name_str}" if mono_has_qm_sol else ""
-                    xyz_comment_for_monomer_qm = f"{monomer_name_from_meta} monomer{i+1} qm region{qm_sol_desc_mono}"
-                    write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_qm_region.xyz'),
+                    xyz_comment_for_monomer_qm = f"{monomer_name_from_meta} monomer{i+1} qm{qm_sol_desc_mono}"
+                    write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_qm.xyz'),
                               mono_qm_atoms_xyz, mono_qm_coords_xyz,
                               comment=xyz_comment_for_monomer_qm)
             
