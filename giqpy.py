@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #=================================================================================================
-# Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
+# Sayan Adhikari | May 27, 2025 | https://github.com/sayan919
 #=================================================================================================
 """
 Generate Inputs for QM/MM systems for Gaussian or TeraChem
