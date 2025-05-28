@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #=================================================================================================
-# Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
+# Sayan Adhikari | May 27, 2025 | https://github.com/sayan919
 #=================================================================================================
 """
 Generate Inputs for QM/MM systems for Gaussian or TeraChem
@@ -31,17 +31,20 @@ Flags:
     
     --eetg (Optional) : Flag to generate only EETG input for dimers (requires --aggregate=2).
     
-    --output_com (Optional) : monomer/dimer/both; (default: both).
+    --output_com (Optional) : monomer/dimer/both; 
+                              Generates Gaussian .com input files.
+                              If specified, --gauss_keywords is required.
     OR,
-    --output_xyz (Optional) : monomer/dimer/both/none; (default: both).
+    --output_xyz (Optional) : monomer/dimer/both/none; 
+                              Generates detailed QM region and MM solvent .xyz files.
 
-    --gauss_keywords (Required with --output_com) : Gaussian keywords (must be used with --output_com).
+    --gauss_keywords (Conditionally Required) : Gaussian keywords (required if --output_com is used).
     
     --tag (Optional) : custom tag for generated .com filenames (e.g., ..._TAG.com).
     
     --logfile (Optional) : Specify log file name (default: run.log).
-
 """
+
 import argparse
 import os
 import json
@@ -55,7 +58,7 @@ from typing import List, Tuple, Optional, Dict, Any, Iterator, Union
 # --- Constants ---
 AUTO_MM_SOLVENT_TRIGGER: str = "auto_detect_mm_solvent_from_input_xyz"
 TEMP_FRAME_XYZ_FILENAME: str = "_current_frame_data.xyz"
-LOG_FILENAME: str = "giqpy_run.log"
+LOG_FILENAME: str = "giqpy_run.log" # Modified default log filename in main
 
 # --- JSON Keys Constants ---
 JSON_KEY_NAME: str = "name"
@@ -108,40 +111,49 @@ def split_frames(
     processed_frames_info: List[Tuple[Optional[str], str, str]] = []
 
     if single_xyz_path:
+        # Ensure base output directory exists even for single_xyz if it's not current dir
         if base_output_dir_for_traj != "." and not os.path.exists(base_output_dir_for_traj):
-            os.makedirs(base_output_dir_for_traj, exist_ok=True)
+            try:
+                os.makedirs(base_output_dir_for_traj, exist_ok=True)
+            except OSError as e:
+                err_msg = f"Could not create output directory {base_output_dir_for_traj}: {e}"
+                print(f"ERROR: {err_msg}", file=sys.stderr)
+                if log_file_handle: write_to_log(err_msg, is_error=True)
+                raise
         processed_frames_info.append((None, single_xyz_path, base_output_dir_for_traj))
         return processed_frames_info
 
     if not traj_xyz_path: 
+        # This case should ideally not be reached if logic in main is correct
+        # (i.e., one of single_xyz_path or traj_xyz_path must be provided).
         print("ERROR: Trajectory path is None, but single_xyz_path was also None.", file=sys.stderr)
-        write_to_log("Trajectory path is None, but single_xyz_path was also None.", is_error=True)
-        return []
+        if log_file_handle: write_to_log("Trajectory path is None, but single_xyz_path was also None.", is_error=True)
+        return [] # Or raise an error
 
     try:
         with open(traj_xyz_path, 'r') as f:
             lines = f.read().splitlines()
     except FileNotFoundError:
         print(f"ERROR: Trajectory file not found: {traj_xyz_path}", file=sys.stderr)
-        write_to_log(f"Trajectory file not found: {traj_xyz_path}", is_error=True)
+        if log_file_handle: write_to_log(f"Trajectory file not found: {traj_xyz_path}", is_error=True)
         raise
         
     if not lines:
         print(f"ERROR: Empty trajectory: {traj_xyz_path}", file=sys.stderr)
-        write_to_log(f"Empty trajectory: {traj_xyz_path}", is_error=True)
+        if log_file_handle: write_to_log(f"Empty trajectory: {traj_xyz_path}", is_error=True)
         raise ValueError(f"Empty trajectory: {traj_xyz_path}")
     
     try:
         total_atoms_per_frame = int(lines[0].strip())
     except ValueError:
         print(f"ERROR: First line of trajectory {traj_xyz_path} must be the number of atoms.", file=sys.stderr)
-        write_to_log(f"First line of trajectory {traj_xyz_path} must be the number of atoms.", is_error=True)
+        if log_file_handle: write_to_log(f"First line of trajectory {traj_xyz_path} must be the number of atoms.", is_error=True)
         raise
         
     block_size = total_atoms_per_frame + 2 
-    if block_size <= 2:
+    if block_size <= 2: # Number of atoms must be positive.
         print(f"ERROR: Invalid atom count ({total_atoms_per_frame}) in trajectory {traj_xyz_path}.", file=sys.stderr)
-        write_to_log(f"Invalid atom count ({total_atoms_per_frame}) in trajectory {traj_xyz_path}.", is_error=True)
+        if log_file_handle: write_to_log(f"Invalid atom count ({total_atoms_per_frame}) in trajectory {traj_xyz_path}.", is_error=True)
         raise ValueError(f"Invalid atom count ({total_atoms_per_frame}) in trajectory {traj_xyz_path}.")
 
     max_possible_frames = len(lines) // block_size
@@ -150,14 +162,20 @@ def split_frames(
     if num_frames_to_extract and num_frames_to_extract > max_possible_frames:
         warn_msg = f"Requested {num_frames_to_extract} frames, but trajectory only contains {max_possible_frames}. Processing all available frames."
         print(f"WARNING: {warn_msg}")
-        write_to_log(warn_msg, is_warning=True)
+        if log_file_handle: write_to_log(warn_msg, is_warning=True)
 
 
     for i in range(actual_frames_to_process):
         frame_id_str = str(i + 1)
         output_dir_for_frame = os.path.join(base_output_dir_for_traj, frame_id_str)
-        os.makedirs(output_dir_for_frame, exist_ok=True)
-        
+        try:
+            os.makedirs(output_dir_for_frame, exist_ok=True)
+        except OSError as e:
+            err_msg = f"Could not create frame-specific output directory {output_dir_for_frame}: {e}"
+            print(f"ERROR: {err_msg}", file=sys.stderr)
+            if log_file_handle: write_to_log(err_msg, is_error=True)
+            raise
+
         temp_xyz_path_for_frame = os.path.join(output_dir_for_frame, TEMP_FRAME_XYZ_FILENAME)
         
         start_line_idx = i * block_size
@@ -169,38 +187,38 @@ def split_frames(
         except IOError as e:
             err_msg = f"Could not write temporary frame file {temp_xyz_path_for_frame}: {e}"
             print(f"ERROR: {err_msg}", file=sys.stderr)
-            write_to_log(err_msg, is_error=True)
+            if log_file_handle: write_to_log(err_msg, is_error=True)
             raise
             
         processed_frames_info.append((frame_id_str, temp_xyz_path_for_frame, output_dir_for_frame))
     
     return processed_frames_info
 
-
+# ... (keep all other functions like load_system_info, parse_formula, etc., as they are) ...
 def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Load monomer and solvent metadata from a single JSON array file.
     Performs validation on the structure and content of the JSON.
     """
-    write_to_log(f"Loading system info from: {system_info_path}") 
+    if log_file_handle: write_to_log(f"Loading system info from: {system_info_path}")
     try:
         with open(system_info_path) as f:
             data = json.load(f)
     except FileNotFoundError:
         err_msg = f"System info JSON file not found: {system_info_path}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
+        if log_file_handle: write_to_log(err_msg, is_error=True)
         raise
     except json.JSONDecodeError as e:
         err_msg = f"Invalid JSON format in system info file: {system_info_path}. Error: {e}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
+        if log_file_handle: write_to_log(err_msg, is_error=True)
         raise ValueError(err_msg)
 
     if not isinstance(data, list) or len(data) < aggregate + 1:
         msg = f"system_info must be a JSON array with at least {aggregate + 1} entries ({aggregate} monomers + 1 solvent)."
         print(f"ERROR: {msg}", file=sys.stderr)
-        write_to_log(msg, is_error=True)
+        if log_file_handle: write_to_log(msg, is_error=True)
         raise ValueError(msg)
     
     monomers_data: List[Dict[str, Any]] = data[:aggregate]
@@ -231,7 +249,7 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
         if JSON_KEY_MOL_FORMULA not in monomer: 
             warn_msg = f"Monomer '{monomer_id_for_log}' is missing optional key: '{JSON_KEY_MOL_FORMULA}'."
             print(f"WARNING: {warn_msg}")
-            write_to_log(warn_msg, is_warning=True)
+            if log_file_handle: write_to_log(warn_msg, is_warning=True)
 
 
     # Validate solvent
@@ -244,7 +262,7 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
         JSON_KEY_CHARGES_ARRAY: list
     }
     solvent_id_for_log = solvent_data.get(JSON_KEY_NAME, "solvent") 
-    solvent_data[JSON_KEY_NAME] = solvent_id_for_log 
+    solvent_data[JSON_KEY_NAME] = solvent_id_for_log # Ensure name key exists for logging
 
     for key, expected_type in required_keys_solvent.items():
         if key not in solvent_data:
@@ -254,8 +272,9 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
 
     if solvent_data[JSON_KEY_NATOMS] <= 0:
         raise ValueError(f"Solvent entry '{solvent_id_for_log}' key '{JSON_KEY_NATOMS}' must be a positive integer.")
-    if not solvent_data[JSON_KEY_CHARGES_ARRAY]:
-        raise ValueError(f"Solvent entry '{solvent_id_for_log}' key '{JSON_KEY_CHARGES_ARRAY}' must be a non-empty list.")
+    if not solvent_data[JSON_KEY_CHARGES_ARRAY]: # Must have at least one charge entry if nAtoms > 0
+        if solvent_data[JSON_KEY_NATOMS] > 0 : # Only raise if atoms are expected
+             raise ValueError(f"Solvent entry '{solvent_id_for_log}' key '{JSON_KEY_CHARGES_ARRAY}' must be a non-empty list when nAtoms > 0.")
     if len(solvent_data[JSON_KEY_CHARGES_ARRAY]) != solvent_data[JSON_KEY_NATOMS]:
         raise ValueError(f"Solvent entry '{solvent_id_for_log}': Number of entries in '{JSON_KEY_CHARGES_ARRAY}' ({len(solvent_data[JSON_KEY_CHARGES_ARRAY])}) "
                          f"does not match '{JSON_KEY_NATOMS}' ({solvent_data[JSON_KEY_NATOMS]}).")
@@ -268,7 +287,7 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
         if JSON_KEY_CHARGE not in charge_entry or not isinstance(charge_entry[JSON_KEY_CHARGE], (int, float)):
             raise ValueError(f"Solvent '{solvent_id_for_log}', charge entry at index {charge_entry_idx}: missing or invalid '{JSON_KEY_CHARGE}'.")
     
-    write_to_log("System info loaded and validated successfully.") 
+    if log_file_handle: write_to_log("System info loaded and validated successfully.")
     return monomers_data, solvent_data
 
 
@@ -291,10 +310,15 @@ def group_qm_molecules(atoms: AtomListType, coords: CoordType, fmt_counts: Dict[
     size = sum(fmt_counts.values()) 
     if not atoms: 
         return []
+    if size == 0 : # Avoid division by zero if formula is empty (e.g. "None" or "")
+        msg = f"Cannot group solvent molecules: formula '{fmt_counts}' results in zero atoms per molecule."
+        print(f"ERROR: {msg}", file=sys.stderr)
+        if log_file_handle: write_to_log(msg, is_error=True)
+        raise ValueError(msg)
     if len(atoms) % size != 0:
         msg = f"Total solvent atom count ({len(atoms)}) is not divisible by formula size ({size}). Ensure correct solvent definition and XYZ content."
         print(f"ERROR: {msg}", file=sys.stderr)
-        write_to_log(msg, is_error=True)
+        if log_file_handle: write_to_log(msg, is_error=True)
         raise ValueError(msg)
     
     groups: List[SolventGroupType] = []
@@ -309,11 +333,16 @@ def is_within_radius(core_coords_list: List[CoordType], mol_coords_array: CoordT
     """
     Check if any atom in mol_coords_array lies within radius of any core_coords_array in core_coords_list.
     """
+    if radius < 0: return False # Negative radius means no selection
     for core_coord_set in core_coords_list:
         if core_coord_set.size == 0 or mol_coords_array.size == 0:
             continue
-        dists = np.linalg.norm(core_coord_set[:, None, :] - mol_coords_array[None, :, :], axis=2)
-        if np.any(dists < radius):
+        # Efficient distance calculation:
+        # Expand dims for broadcasting: core (N,1,3), mol (1,M,3) -> diff (N,M,3)
+        diff = core_coord_set[:, np.newaxis, :] - mol_coords_array[np.newaxis, :, :]
+        # dists = np.sqrt(np.sum(diff**2, axis=2)) # Norm calculation
+        dists_sq = np.sum(diff**2, axis=2) # Compare squared distances to avoid sqrt
+        if np.any(dists_sq < radius**2):
             return True
     return False
 
@@ -330,7 +359,7 @@ def flatten_groups(groups_of_molecules: List[SolventGroupType]) -> Tuple[AtomLis
             flat_coords_list.append(coords_in_mol)
     
     if not flat_coords_list: 
-        return flat_atoms, np.array([]) 
+        return flat_atoms, np.array([]) # Return empty array with proper shape for vstack if flat_atoms is also empty
     return flat_atoms, np.vstack(flat_coords_list)
 
 
@@ -342,19 +371,26 @@ def write_xyz(path: str, atoms: Union[AtomListType, ChargeListType], coords: Coo
     coords_array = np.array(coords)
     if coords_array.ndim == 1 and coords_array.shape[0] == 3 and len(atoms) == 1: 
         coords_array = coords_array.reshape(1, 3)
-    elif coords_array.ndim == 1 and len(atoms) > 1 : 
-        raise ValueError(f"Coordinates array for multiple atoms has unexpected shape: {coords_array.shape}")
-    elif coords_array.size == 0 and len(atoms) > 0:
-        raise ValueError("Cannot write XYZ: Atoms provided but coordinates are empty.")
+    elif coords_array.ndim == 1 and len(atoms) > 1 and coords_array.size != 3 * len(atoms) : 
+        # If it's a flat 1D array for multiple atoms, it should be N*3
+        raise ValueError(f"Coordinates array for multiple atoms has unexpected 1D shape: {coords_array.shape}, expected ({len(atoms)*3},)")
+    elif coords_array.ndim == 1 and len(atoms) > 1 and coords_array.size == 3 * len(atoms) :
+        coords_array = coords_array.reshape(len(atoms), 3) # Reshape if it's a flat list of coords
+    elif coords_array.size == 0 and len(atoms) > 0: # Check if atoms exist but coords are genuinely empty
+        if not (len(atoms) == 1 and atoms[0] == ""): # Allow a single empty atom string with no coords (though unusual)
+             raise ValueError("Cannot write XYZ: Atoms provided but coordinates are empty.")
     elif coords_array.ndim == 2 and coords_array.shape[0] != len(atoms):
          raise ValueError(f"Mismatch between number of atoms ({len(atoms)}) and number of coordinate rows ({coords_array.shape[0]}).")
+    elif coords_array.ndim > 2 :
+        raise ValueError(f"Coordinates array has too many dimensions: {coords_array.ndim}")
+
 
     try:
         with open(path, 'w') as f:
             f.write(f"{len(atoms)}\n")
             f.write(f"{comment}\n")
             for atom_symbol_or_charge, xyz_row in zip(atoms, coords_array):
-                if isinstance(atom_symbol_or_charge, float):
+                if isinstance(atom_symbol_or_charge, (float, np.floating)): # Include numpy floats
                     atom_col_str = f"{atom_symbol_or_charge:<12.5f}" 
                 else:
                     atom_col_str = f"{str(atom_symbol_or_charge):<3}" 
@@ -362,7 +398,7 @@ def write_xyz(path: str, atoms: Union[AtomListType, ChargeListType], coords: Coo
     except IOError as e:
         err_msg = f"Could not write XYZ file {path}: {e}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
+        if log_file_handle: write_to_log(err_msg, is_error=True)
         raise
 
 def localize_solvent_and_prepare_regions(
@@ -389,13 +425,13 @@ def localize_solvent_and_prepare_regions(
     except FileNotFoundError:
         err_msg = f"Input XYZ file not found: {main_xyz_input_filepath}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
+        if log_file_handle: write_to_log(err_msg, is_error=True)
         raise
 
     if len(lines) < 2: raise ValueError(f"XYZ file {main_xyz_input_filepath} is too short.")
     try: num_atoms_in_main_file = int(lines[0].strip())
     except ValueError: raise ValueError(f"First line of XYZ {main_xyz_input_filepath} must be atom count.")
-    if len(lines) < num_atoms_in_main_file + 2: raise ValueError(f"XYZ {main_xyz_input_filepath} has fewer lines than atom count.")
+    if len(lines) < num_atoms_in_main_file + 2: raise ValueError(f"XYZ {main_xyz_input_filepath} has fewer lines ({len(lines)}) than expected based on atom count ({num_atoms_in_main_file + 2}).")
     
     for ln_idx, ln_content in enumerate(lines[2 : num_atoms_in_main_file + 2]):
         parts = ln_content.split()
@@ -409,7 +445,9 @@ def localize_solvent_and_prepare_regions(
     main_coords_all_array = np.array(loaded_main_coords_list)
 
     core_atoms_all_list: AtomListType
-    core_coords_all_for_dist_calc: CoordType
+    core_coords_all_for_dist_calc: CoordType # These are the ones used for distance calculations
+    core_coords_to_use_for_qm: CoordType # These are the ones that go into the QM region output (can be overridden)
+
     solvent_atoms_from_xyz_list: AtomListType
     solvent_coords_from_xyz_array: CoordType
 
@@ -418,80 +456,95 @@ def localize_solvent_and_prepare_regions(
             msg = (f"Atom count in --qm_aggregate_xyz ({qm_aggregate_coords_override.shape[0]}) "
                    f"does not match total core atoms from system_info ({total_core_atom_count_from_json}).")
             print(f"ERROR: {msg}", file=sys.stderr)
-            write_to_log(msg, is_error=True)
+            if log_file_handle: write_to_log(msg, is_error=True)
             raise ValueError(msg)
         
+        # Atom types for the core are still taken from the main XYZ file
         core_atoms_all_list = main_atoms_all_array[:total_core_atom_count_from_json].tolist() 
-        core_coords_all_for_dist_calc = qm_aggregate_coords_override
+        core_coords_to_use_for_qm = qm_aggregate_coords_override # Use override for output
+        # For distance calculations (e.g. solvent shell), it's often better to use the *actual* positions
+        # of the core from the main XYZ, unless the override is meant to also redefine the solvent shell center.
+        # Assuming the override is just for the QM part, and solvent shell is relative to original core.
+        # If qm_aggregate_coords_override should ALSO define the center for solvent selection, then use it here too.
+        # For now, let's assume qm_radius is relative to the *original* core positions for consistency.
+        # If it should be relative to the *new* core positions, then:
+        # core_coords_all_for_dist_calc = qm_aggregate_coords_override
+        core_coords_all_for_dist_calc = main_coords_all_array[:total_core_atom_count_from_json] # Sticking to original for solvent finding
         
         if num_atoms_in_main_file < total_core_atom_count_from_json:
             msg = (f"Main input XYZ file '{main_xyz_input_filepath}' has fewer atoms ({num_atoms_in_main_file}) "
                    f"than expected for the core ({total_core_atom_count_from_json}) when using --qm_aggregate_xyz. "
-                   f"It must still contain at least the core atoms for solvent indexing.")
+                   f"It must still contain at least the core atoms for atom typing and solvent indexing.")
             print(f"ERROR: {msg}", file=sys.stderr)
-            write_to_log(msg, is_error=True)
+            if log_file_handle: write_to_log(msg, is_error=True)
             raise ValueError(msg)
             
         solvent_atoms_from_xyz_list = main_atoms_all_array[total_core_atom_count_from_json:].tolist()
         solvent_coords_from_xyz_array = main_coords_all_array[total_core_atom_count_from_json:]
-        write_to_log(f"Using core coordinates from --qm_aggregate_xyz. Atom types for core and all solvent taken from {main_xyz_input_filepath}.")
+        if log_file_handle: write_to_log(f"Using core coordinates for QM region from --qm_aggregate_xyz. Atom types for core and all solvent taken from {main_xyz_input_filepath}. Solvent localization relative to core from {main_xyz_input_filepath}.")
 
-    else:
+    else: # No override
         core_atoms_all_list = main_atoms_all_array[:total_core_atom_count_from_json].tolist()
         core_coords_all_for_dist_calc = main_coords_all_array[:total_core_atom_count_from_json]
+        core_coords_to_use_for_qm = core_coords_all_for_dist_calc # They are the same
         solvent_atoms_from_xyz_list = main_atoms_all_array[total_core_atom_count_from_json:].tolist()
         solvent_coords_from_xyz_array = main_coords_all_array[total_core_atom_count_from_json:]
 
     solvent_formula_counts = parse_formula(solvent_meta[JSON_KEY_MOL_FORMULA])
     all_solvent_groups_list: List[SolventGroupType] = group_qm_molecules(solvent_atoms_from_xyz_list, solvent_coords_from_xyz_array, solvent_formula_counts)
     
+    # Use core_coords_all_for_dist_calc for finding solvent around the aggregate
     aggregate_qm_solvent_groups: List[SolventGroupType] = [g for g in all_solvent_groups_list if is_within_radius([core_coords_all_for_dist_calc], g[1], qm_radius)]
     aggregate_qm_solvent_atoms_list, aggregate_qm_solvent_coords_array = flatten_groups(aggregate_qm_solvent_groups)
     
-    aggregate_qm_group_ids = set(map(id, aggregate_qm_solvent_groups))
+    aggregate_qm_group_ids = set(map(id, aggregate_qm_solvent_groups)) # Efficiently track selected groups
     non_qm_solvent_groups: List[SolventGroupType] = [g for g in all_solvent_groups_list if id(g) not in aggregate_qm_group_ids]
 
     monomer_localized_qm_solvent_groups_list: List[List[SolventGroupType]] = [] 
-    current_core_idx = 0
+    current_core_idx_dist = 0 # For iterating through core_coords_all_for_dist_calc
     for num_atoms_mono in n_atoms_per_monomer_list:
-        monomer_core_coords = core_coords_all_for_dist_calc[current_core_idx : current_core_idx + num_atoms_mono]
-        localized_groups = [g for g in all_solvent_groups_list if is_within_radius([monomer_core_coords], g[1], qm_radius)]
+        # Use coords for distance calculation here
+        monomer_core_coords_for_dist = core_coords_all_for_dist_calc[current_core_idx_dist : current_core_idx_dist + num_atoms_mono]
+        localized_groups = [g for g in all_solvent_groups_list if is_within_radius([monomer_core_coords_for_dist], g[1], qm_radius)]
         monomer_localized_qm_solvent_groups_list.append(localized_groups)
-        current_core_idx += num_atoms_mono
+        current_core_idx_dist += num_atoms_mono
         
-    seen_qm_solvent_ids_for_monomers: set = set()
+    seen_qm_solvent_ids_for_monomers: set = set() # To ensure solvent molecules are not double-counted in monomer QM regions
     monomer_unique_qm_solvent_data_list: List[Tuple[AtomListType, CoordType]] = [] 
-    qm_solvent_flags: Dict[str, bool] = {}
+    qm_solvent_flags: Dict[str, bool] = {} # To track if QM solvent was actually added
 
     for i in range(len(monomers_meta)):
         unique_groups_for_this_mono = []
         for group in monomer_localized_qm_solvent_groups_list[i]:
             if id(group) not in seen_qm_solvent_ids_for_monomers:
                 unique_groups_for_this_mono.append(group)
-                seen_qm_solvent_ids_for_monomers.add(id(group))
+                seen_qm_solvent_ids_for_monomers.add(id(group)) # Mark as seen for subsequent monomers
         added_qm_atoms, added_qm_coords = flatten_groups(unique_groups_for_this_mono)
         monomer_unique_qm_solvent_data_list.append((added_qm_atoms, added_qm_coords))
-        qm_solvent_flags[f'monomer_{i}_has_added_qm_solvent'] = bool(added_qm_atoms)
+        qm_solvent_flags[f'monomer_{i}_has_added_qm_solvent'] = bool(added_qm_atoms) # True if list is not empty
 
     qm_solvent_flags['aggregate_has_added_qm_solvent'] = bool(aggregate_qm_solvent_atoms_list)
 
+    # Prepare final QM regions using core_coords_to_use_for_qm
     aggregate_final_qm_atoms = core_atoms_all_list + aggregate_qm_solvent_atoms_list
-    aggregate_final_qm_coords = np.vstack((core_coords_all_for_dist_calc, aggregate_qm_solvent_coords_array)) if aggregate_qm_solvent_coords_array.size > 0 else core_coords_all_for_dist_calc
+    aggregate_final_qm_coords = np.vstack((core_coords_to_use_for_qm, aggregate_qm_solvent_coords_array)) if aggregate_qm_solvent_coords_array.size > 0 else core_coords_to_use_for_qm
     aggregate_qm_region_for_gauss: Tuple[AtomListType, CoordType] = (aggregate_final_qm_atoms, aggregate_final_qm_coords)
 
     monomer_qm_regions_for_gauss: List[Tuple[AtomListType, CoordType]] = []
-    current_core_idx = 0
+    current_core_idx_qm = 0 # For iterating through core_coords_to_use_for_qm
     for i in range(len(monomers_meta)):
-        mono_core_atoms = core_atoms_all_list[current_core_idx : current_core_idx + n_atoms_per_monomer_list[i]]
-        mono_core_coords = core_coords_all_for_dist_calc[current_core_idx : current_core_idx + n_atoms_per_monomer_list[i]]
+        num_atoms_in_this_mono = n_atoms_per_monomer_list[i]
+        mono_core_atoms = core_atoms_all_list[current_core_idx_qm : current_core_idx_qm + num_atoms_in_this_mono]
+        mono_core_coords_for_qm = core_coords_to_use_for_qm[current_core_idx_qm : current_core_idx_qm + num_atoms_in_this_mono]
         
-        added_qm_atoms, added_qm_coords = monomer_unique_qm_solvent_data_list[i]
+        added_qm_atoms, added_qm_coords = monomer_unique_qm_solvent_data_list[i] # These are already from all_solvent_groups_list (original coords)
         
         final_mono_atoms = mono_core_atoms + added_qm_atoms
-        final_mono_coords = np.vstack((mono_core_coords, added_qm_coords)) if added_qm_coords.size > 0 else mono_core_coords
+        final_mono_coords = np.vstack((mono_core_coords_for_qm, added_qm_coords)) if added_qm_coords.size > 0 else mono_core_coords_for_qm
         monomer_qm_regions_for_gauss.append((final_mono_atoms, final_mono_coords))
-        current_core_idx += n_atoms_per_monomer_list[i]
+        current_core_idx_qm += num_atoms_in_this_mono
             
+    # Return core_coords_all_for_dist_calc because this is what's used for centroid distance calculations
     return (monomer_qm_regions_for_gauss, aggregate_qm_region_for_gauss, 
             non_qm_solvent_groups, qm_solvent_flags, 
             core_coords_all_for_dist_calc, n_atoms_per_monomer_list)
@@ -500,7 +553,7 @@ def localize_solvent_and_prepare_regions(
 def load_monomer_charges_from_file(charge_file_path: str) -> List[MMChargeTupleType]:
     """
     Load MM charges from a file for monomer embedding. Format: charge x y z.
-    Returns list of (x, y, z, charge) tuples.
+    Returns list of (x, y, z, charge) tuples for Gaussian compatibility.
     """
     charges_data: List[MMChargeTupleType] = []
     try:
@@ -509,27 +562,29 @@ def load_monomer_charges_from_file(charge_file_path: str) -> List[MMChargeTupleT
                 parts = line_content.strip().split()
                 if len(parts) == 4:
                     try:
-                        charge = float(parts[0])
-                        x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
-                        charges_data.append((x, y, z, charge)) 
+                        # File format is charge x y z
+                        charge_val = float(parts[0])
+                        x_val, y_val, z_val = float(parts[1]), float(parts[2]), float(parts[3])
+                        charges_data.append((x_val, y_val, z_val, charge_val)) # Store as (x,y,z,q)
                     except ValueError:
                         warn_msg = f"Non-numeric value in charge file {charge_file_path} on line {line_num + 1}: {line_content.strip()}"
                         print(f"WARNING: {warn_msg}")
-                        write_to_log(warn_msg, is_warning=True)
-                elif parts: 
-                    warn_msg = f"Malformed line in charge file {charge_file_path} on line {line_num + 1}: {line_content.strip()}"
+                        if log_file_handle: write_to_log(warn_msg, is_warning=True)
+                elif parts: # If line is not empty and not 4 parts
+                    warn_msg = f"Malformed line in charge file {charge_file_path} on line {line_num + 1} (expected 4 values, got {len(parts)}): {line_content.strip()}"
                     print(f"WARNING: {warn_msg}")
-                    write_to_log(warn_msg, is_warning=True)
+                    if log_file_handle: write_to_log(warn_msg, is_warning=True)
     except FileNotFoundError:
-        warn_msg = f"MM Monomer charge file not found: {charge_file_path}. Returning empty charges."
+        # This should ideally be caught earlier or handled by parser.error if file is mandatory
+        warn_msg = f"MM Monomer charge file not found: {charge_file_path}. Returning empty charges for this file."
         print(f"WARNING: {warn_msg}")
-        write_to_log(warn_msg, is_warning=True)
+        if log_file_handle: write_to_log(warn_msg, is_warning=True)
     return charges_data
 
 def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], solvent_metadata_entry: Dict[str, Any]) -> List[MMChargeTupleType]:
     """
     Assigns charges to solvent molecules based on the solvent_metadata_entry.
-    Returns list of (charge, x, y, z) tuples.
+    Returns list of (x, y, z, charge) tuples for Gaussian compatibility.
     """
     mm_solvent_charges_list: List[MMChargeTupleType] = []
     defined_charges_per_mol: List[Dict[str, Any]] = solvent_metadata_entry[JSON_KEY_CHARGES_ARRAY]
@@ -540,34 +595,35 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
                f"does not match entries in '{JSON_KEY_CHARGES_ARRAY}' ({len(defined_charges_per_mol)}) "
                f"for solvent '{solvent_metadata_entry.get(JSON_KEY_NAME, 'Unnamed Solvent')}'.")
         print(f"ERROR: {msg}", file=sys.stderr)
-        write_to_log(msg, is_error=True)
+        if log_file_handle: write_to_log(msg, is_error=True)
         raise ValueError(msg)
 
     for mol_idx, (atom_symbols_in_molecule, coords_for_molecule) in enumerate(solvent_groups):
         if len(atom_symbols_in_molecule) != num_atoms_per_solvent_mol_defined:
             warn_msg = (f"Solvent molecule {mol_idx+1} (auto-detected for MM) has {len(atom_symbols_in_molecule)} atoms, "
                         f"but system_info defines {num_atoms_per_solvent_mol_defined} for solvent "
-                        f"'{solvent_metadata_entry.get(JSON_KEY_NAME, 'Unnamed Solvent')}'. Skipping this molecule.")
+                        f"'{solvent_metadata_entry.get(JSON_KEY_NAME, 'Unnamed Solvent')}'. Skipping this molecule for MM charges.")
             print(f"WARNING: {warn_msg}")
-            write_to_log(warn_msg, is_warning=True)
+            if log_file_handle: write_to_log(warn_msg, is_warning=True)
             continue
 
         for atom_idx_in_mol in range(len(atom_symbols_in_molecule)):
-            atom_symbol = atom_symbols_in_molecule[atom_idx_in_mol]
+            atom_symbol_from_xyz = atom_symbols_in_molecule[atom_idx_in_mol]
             atom_coord = coords_for_molecule[atom_idx_in_mol]
             
+            # Get charge based on position in the defined solvent molecule template
             charge_info_for_this_atom_pos = defined_charges_per_mol[atom_idx_in_mol]
             charge_value: float = charge_info_for_this_atom_pos[JSON_KEY_CHARGE]
             defined_element_for_pos: str = charge_info_for_this_atom_pos[JSON_KEY_ELEMENT]
 
-            if atom_symbol != defined_element_for_pos:
+            if atom_symbol_from_xyz != defined_element_for_pos:
                 warn_msg = (f"Element mismatch for atom {atom_idx_in_mol+1} in auto-detected MM solvent molecule {mol_idx+1}. "
-                            f"XYZ has '{atom_symbol}', system_info expects '{defined_element_for_pos}' at this position. "
-                            f"Using charge for '{defined_element_for_pos}' ({charge_value}).")
+                            f"XYZ has '{atom_symbol_from_xyz}', system_info expects '{defined_element_for_pos}' at this position. "
+                            f"Using charge defined for '{defined_element_for_pos}' ({charge_value}).")
                 print(f"WARNING: {warn_msg}")
-                write_to_log(warn_msg, is_warning=True)
+                if log_file_handle: write_to_log(warn_msg, is_warning=True)
             
-            mm_solvent_charges_list.append((charge_value, atom_coord[0], atom_coord[1], atom_coord[2]))
+            mm_solvent_charges_list.append((atom_coord[0], atom_coord[1], atom_coord[2], charge_value)) # (x,y,z,q)
             
     return mm_solvent_charges_list
 
@@ -575,64 +631,76 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
 def get_solvent_descriptor_suffix(entity_has_added_qm_solvent: bool, system_has_mm_solvent: bool) -> str:
     """Determines the solvent descriptor part of the .com filename (without .com extension)."""
     if entity_has_added_qm_solvent and system_has_mm_solvent:
-        return "_qm_mm"
+        return "_qmsol_mmsol" # More descriptive
     elif entity_has_added_qm_solvent:
-        return "_qm"
+        return "_qmsol"
     elif system_has_mm_solvent:
-        return "_mm"
+        return "_mmsol"
     else:
         return "" 
 
 
-def write_com_file( # Renamed from write_vee_com and write_eetg_com to be more general
+def write_com_file( 
     path: str, keywords: List[str], title: str, charge: Union[int, float], spin: int,
     atoms_list: AtomListType, coords_array: CoordType, 
-    mm_charges_list: Optional[List[MMChargeTupleType]] = None, # Combined MM charges (monomer or solvent)
-    fragment_definitions: Optional[List[Tuple[AtomListType, CoordType, int, int]]] = None # For EETG: [(atoms1, coords1, chg1, spin1), (atoms2, coords2, chg2, spin2)]
+    mm_charges_list: Optional[List[MMChargeTupleType]] = None, 
+    fragment_definitions: Optional[List[Tuple[AtomListType, CoordType, int, int]]] = None
 ) -> None:   
     """
     Writes a Gaussian .com input file.
-    Can handle standard calculations and EETG (if fragment_definitions is provided).
-    mm_charges_list are (x,y,z,q) for Gaussian's charge keyword.
+    mm_charges_list format: (x, y, z, q).
+    fragment_definitions: [(atoms1, coords1, chg1, spin1), (atoms2, coords2, chg2, spin2)]
     """
-    final_keywords = list(keywords) 
+    final_keywords = list(keywords) # Make a copy
     if mm_charges_list:
-        charge_keyword_present = any("# charge" in kw.lower() for kw in final_keywords)
+        # Check if '# charge' or 'charge' by itself is in keywords for external charges
+        charge_keyword_present = any(re.fullmatch(r"#.*charge", kw.lower().strip()) or kw.lower().strip() == "charge" for kw in final_keywords)
         if not charge_keyword_present:
-            final_keywords.append("# charge ! MM charges present for QM/MM embedding")
+            # Find first line starting with # to insert 'charge' keyword, or append if none.
+            # This ensures 'charge' is part of the route section.
+            inserted = False
+            for i, kw_line in enumerate(final_keywords):
+                if kw_line.strip().startswith("#"):
+                    final_keywords.insert(i + 1, "charge") # Add 'charge' on the next line
+                    inserted = True
+                    break
+            if not inserted: # No line starting with #, so just append.
+                 final_keywords.append("charge")
+
 
     try:
         with open(path, 'w') as f:
+            # Ensure %chk is first, then keywords
             f.write(f"%chk={os.path.splitext(os.path.basename(path))[0]}.chk\n")
             for kw_line in final_keywords:
                 f.write(kw_line + "\n")
-            f.write("\n" + title + "\n\n")
+            f.write("\n" + title + "\n\n") # Ensure blank line after keywords
             
-            if fragment_definitions: # EETG case
-                # Overall charge/spin, then per-fragment charge/spin
-                f.write(f"{charge} {spin} ")
+            if fragment_definitions: 
+                # Overall charge/spin, then per-fragment charge/spin, all on one line
+                f.write(f"{charge} {spin}") # Overall
                 for _, _, chg_frag, spin_frag in fragment_definitions:
-                    f.write(f"{chg_frag} {spin_frag} ")
-                f.write("\n")
+                    f.write(f" {chg_frag} {spin_frag}") # Fragment specific
+                f.write("\n") # End of charge/spin line
                 
                 for frag_idx, (frag_atoms, frag_coords, _, _) in enumerate(fragment_definitions):
                     for atom_sym, xyz_coords in zip(frag_atoms, frag_coords):
                         f.write(f" {atom_sym}(Fragment={frag_idx+1}) {xyz_coords[0]:12.5f} {xyz_coords[1]:12.5f} {xyz_coords[2]:12.5f}\n")
-            else: # Standard (VEE-like) case
+            else: 
                 f.write(f"{charge} {spin}\n")
                 for atom_sym, xyz_coords in zip(atoms_list, coords_array):
                     f.write(f" {atom_sym} {xyz_coords[0]:12.5f} {xyz_coords[1]:12.5f} {xyz_coords[2]:12.5f}\n")
             
             if mm_charges_list: 
-                f.write("\n") 
+                f.write("\n") # Blank line before MM charges
                 for x_mm, y_mm, z_mm, q_mm in mm_charges_list: 
-                    f.write(f" {x_mm:14.5f} {y_mm:12.5f} {z_mm:12.5f} {q_mm:12.5f}\n")
+                    f.write(f" {x_mm:14.5f} {y_mm:12.5f} {z_mm:12.5f} {q_mm:12.5f}\n") # x,y,z,q format
             
-            f.write("\n") 
+            f.write("\n") # Ensure a final blank line
     except IOError as e:
         err_msg = f"Could not write .com file {path}: {e}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
+        if log_file_handle: write_to_log(err_msg, is_error=True)
         raise
 
 
@@ -642,40 +710,49 @@ def load_keywords_from_file(path: str) -> List[str]:
     """
     try:
         with open(path) as f:
-            return [line.rstrip() for line in f if line.strip()]
+            # Strip whitespace from each line and filter out empty lines
+            return [line.strip() for line in f if line.strip()]
     except FileNotFoundError:
         err_msg = f"Keywords file not found: {path}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
+        if log_file_handle: write_to_log(err_msg, is_error=True)
         raise
 
 def calculate_centroid_distance_between_first_two(core_coords_all_array: CoordType, n_atoms_per_monomer_list: List[int]) -> Optional[float]:
     """
     Calculates the distance between the centroids of the first two monomers' core regions.
-    Returns the distance as a float, or None if not applicable.
+    Returns the distance as a float, or None if not applicable or if a monomer has no atoms/coords.
     """
     if len(n_atoms_per_monomer_list) < 2:
         return None 
 
     n_atoms_m1 = n_atoms_per_monomer_list[0]
     if n_atoms_m1 == 0: 
-        write_to_log("Cannot calculate centroid distance: Monomer 1 has 0 atoms.")
+        if log_file_handle: write_to_log("Cannot calculate centroid distance: Monomer 1 has 0 atoms defined in system_info.")
         return None 
+    # Check if core_coords_all_array actually has enough coordinates for M1
+    if core_coords_all_array.shape[0] < n_atoms_m1:
+        if log_file_handle: write_to_log(f"Cannot calculate centroid distance for M1: Core coords array has {core_coords_all_array.shape[0]} atoms, but M1 expects {n_atoms_m1}.")
+        return None
     coords_m1 = core_coords_all_array[0:n_atoms_m1]
-    if coords_m1.shape[0] == 0: 
-        write_to_log("Cannot calculate centroid distance: Monomer 1 coordinate array is empty.")
+    if coords_m1.shape[0] == 0: # Should be caught by n_atoms_m1 == 0, but as a safeguard for array slicing
+        if log_file_handle: write_to_log("Cannot calculate centroid distance: Monomer 1 coordinate slice is empty.")
         return None 
     centroid_m1 = np.mean(coords_m1, axis=0)
 
     n_atoms_m2 = n_atoms_per_monomer_list[1]
     if n_atoms_m2 == 0: 
-        write_to_log("Cannot calculate centroid distance: Monomer 2 has 0 atoms.")
+        if log_file_handle: write_to_log("Cannot calculate centroid distance: Monomer 2 has 0 atoms defined in system_info.")
         return None 
     start_idx_m2 = n_atoms_m1
     end_idx_m2 = n_atoms_m1 + n_atoms_m2
+    # Check if core_coords_all_array actually has enough coordinates for M2
+    if core_coords_all_array.shape[0] < end_idx_m2:
+        if log_file_handle: write_to_log(f"Cannot calculate centroid distance for M2: Core coords array has {core_coords_all_array.shape[0]} atoms, but M1+M2 expect {end_idx_m2}.")
+        return None
     coords_m2 = core_coords_all_array[start_idx_m2:end_idx_m2]
-    if coords_m2.shape[0] == 0: 
-        write_to_log("Cannot calculate centroid distance: Monomer 2 coordinate array is empty.")
+    if coords_m2.shape[0] == 0: # Safeguard
+        if log_file_handle: write_to_log("Cannot calculate centroid distance: Monomer 2 coordinate slice is empty.")
         return None 
     centroid_m2 = np.mean(coords_m2, axis=0)
     
@@ -683,46 +760,49 @@ def calculate_centroid_distance_between_first_two(core_coords_all_array: CoordTy
     return distance
 
 def main() -> None:
-    global log_file_handle 
+    global log_file_handle
+    # Default log filename moved here for clarity, can be overridden by args
+    current_default_log_filename = "giqpy_run.log"
+
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter, 
         description="Generate Gaussian .com and .xyz files from single or trajectory XYZ with QM/MM options.",
         epilog="""
--------------------------------------------------------------------------------
-Core Flags:
-  --single_xyz <file.xyz> or --traj_xyz <file.xyz> :
-                                  Input coordinate file(s).
-                                  gen_qm_mm_files.py uses these for the entire system (monomers + solvent).
-  --frames <N>                    : Number of frames if --traj_xyz is used.
-  --aggregate <M>               : Number of core monomer units (e.g., 2 for a dimer).
-  --system_info <file.json>     : Single JSON defining all monomers and solvent properties.
-                                  This is gen_qm_mm_files.py's comprehensive way to get monomer details
-                                  (name, nAtoms, charge, spin_mult, mol_formula) and
-                                  solvent details (name, mol_formula, nAtoms, charges per atom).
-  --gauss_keywords <file.txt>   : Text file with Gaussian route section keywords.
-                                  Each line is a keyword. Conditionally required if generating .com files.
-                                  Note: PCM solvent environment details, like from an older `--env` flag,
-                                  should be included directly within these Gaussian keywords
-                                  (e.g., SCRF=(PCM,Solvent=Water)).
-  --qm_aggregate_xyz <file.xyz> : Optional: Use coordinates from this file for the core aggregate,
-                                  overriding those from the main input XYZ. Atom order must match.
-  --qm_solvent <radius>         : Defines QM solvent shell by radius (Å) around core atoms.
-                                  This provides explicit QM solvent inclusion.
-  --mm_solvent [file.xyz]       : Optional. Defines MM solvent.
-                                  - If path provided: XYZ-like file (charge x y z per line, skips 2 headers).
-                                  - If flag used alone: Auto-detects non-QM solvent from input XYZ
-                                    and uses charges from system_info.json.
-  --mm_monomer [0|file1 ...]    : Optional. Defines MM charges for embedding from other monomers.
-                                  - If '0': Embeds other monomers with zero charges at their atomic positions.
-                                  - If file(s) provided: File(s) with "charge x y z" for MM charges.
-  --eetg                        : Flag to generate only EETG input for dimers (requires --aggregate=2).
-  --output_com <choice>         : Control .com file generation (monomer, dimer, both; default: both).
-  --output_xyz [choice]         : Control detailed .xyz file generation (monomer, dimer, both, none; 
-                                  If flag is present without value, defaults to "both". If flag absent, no detailed XYZs are generated.)
-  --tag <TAG_STRING>            : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
-  --logfile <filename>          : Specify log file name (default: run.log).
--------------------------------------------------------------------------------
+        -------------------------------------------------------------------------------
+        Core Flags:
+        --single_xyz <file.xyz> or --traj_xyz <file.xyz> :
+                                        Input coordinate file(s). One of these is required.
+        --frames <N>                    : Number of frames if --traj_xyz is used (required with --traj_xyz).
+        --aggregate <M>               : Number of core monomer units (e.g., 2 for a dimer). Required.
+        --system_info <file.json>     : Single JSON defining all monomers and solvent properties. Required.
+        
+        Output Control (At least one of --output_com or --output_xyz must be specified):
+        --output_com [monomer|dimer|both] : Generate Gaussian .com input files.
+                                            If flag is present without a value, defaults to "both".
+                                            Requires --gauss_keywords.
+        --output_xyz [monomer|dimer|both] : Generate detailed .xyz files for QM regions and MM solvent.
+                                            If flag is present without a value, defaults to "both".
+        --gauss_keywords <file.txt>   : Text file with Gaussian route section keywords.
+                                            Required if --output_com is specified.
+        QM/MM Setup:
+        --qm_aggregate_xyz <file.xyz> : Optional: Use coordinates from this file for the core aggregate,
+                                        overriding those from the main input XYZ. Atom order must match.
+        --qm_solvent <radius>         : Defines QM solvent shell by radius (Å) around core atoms (default: 5.0).
+        --mm_solvent [file.xyz]       : Optional. Defines MM solvent.
+                                        - If path provided: XYZ-like file (charge x y z per line, skips 2 headers).
+                                        - If flag used alone (i.e., --mm_solvent with no file path):
+                                            Auto-detects non-QM solvent from input XYZ and uses charges from system_info.json.
+        --mm_monomer [0|file1 ...]    : Optional. Defines MM charges for embedding from other monomers.
+                                        - '0': Embeds other monomers with zero charges at their atomic positions.
+                                        - File(s) provided: File(s) with "charge x y z" for MM charges.
+                                            Provide one file per monomer in the aggregate if this mode is used.
+        --eetg                        : Flag to generate only EETG input for dimers (requires --aggregate=2 and --output_com).
+        
+        Other:
+        --tag <TAG_STRING>            : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
+        --logfile <filename>          : Specify log file name (default: giqpy_run.log).
+        -------------------------------------------------------------------------------
         """
     )
     group_xyz_input = parser.add_mutually_exclusive_group(required=True)
@@ -735,41 +815,58 @@ Core Flags:
                         help='Number of core monomers (e.g., 1 for monomer, 2 for dimer).')
     parser.add_argument('--system_info', type=str, required=True,
                         help='JSON file with monomer and solvent metadata.')
+    
+    # --- Modified output arguments ---
+    parser.add_argument('--output_com', nargs='?', choices=['monomer', 'dimer', 'both'], const='both', default=None,
+                        help=('Generate Gaussian .com input files. '
+                              'If flag is present without a value, defaults to "both". '
+                              'Requires --gauss_keywords if specified.'))
+    parser.add_argument('--output_xyz', nargs='?', choices=['monomer', 'dimer', 'both', 'none'], const='both', default=None, 
+                        help=("Generate detailed .xyz files (QM regions, MM solvent). "
+                              "If flag given without value, defaults to 'both'. "
+                              "Choose 'none' to explicitly disable detailed XYZ output if --output_com is also given."))
+
     parser.add_argument('--gauss_keywords', type=str, default=None, 
-                        help='File with Gaussian keywords (if generating .com files).')
+                        help='File with Gaussian keywords (required if --output_com is specified).')
+    # --- End of modified output arguments ---
+
     parser.add_argument('--qm_aggregate_xyz', type=str, default=None,
                         help='Optional: XYZ file for core aggregate coordinates, overriding main input for core.')
-    parser.add_argument('--qm_solvent', type=float, default=5.0,
-                        help='Radius (Å) for QM solvent selection (default: 5.0).')
-    parser.add_argument('--mm_monomer', type=str, nargs='*',
-                        help="MM embedding: '0' for zero charges, or charge file(s).")
+    parser.add_argument('--qm_solvent', type=float, default=5.0, # Ensure qm_solvent always has a default
+                        help='Radius (Å) for QM solvent selection (default: 5.0). Negative value disables QM solvent.')
+    parser.add_argument('--mm_monomer', type=str, nargs='*', # Can be '0' or list of files
+                        help="MM embedding for other monomers: '0' for zero charges, or path(s) to charge file(s).")
     parser.add_argument('--mm_solvent', type=str, nargs='?', const=AUTO_MM_SOLVENT_TRIGGER, default=None,
-                        help='MM solvent: XYZ-like charge file, or flag alone for auto-detect.')
+                        help='MM solvent: XYZ-like charge file, or flag alone for auto-detect from non-QM solvent and system_info.')
     parser.add_argument('--eetg', action='store_true',
-                        help='Generate EETG input for dimer (requires --aggregate 2).')
-    parser.add_argument('--output_com', choices=['monomer', 'dimer', 'both'], default='both',
-                        help='.com files to generate: monomer, dimer, or both (default: both).')
-    parser.add_argument('--output_xyz', nargs='?', choices=['monomer', 'dimer', 'both'], const='both', default=None, 
-                        help="Detailed XYZs to generate. If flag given, defaults to 'both'. If absent, none.")
+                        help='Generate EETG input for dimer (requires --aggregate 2 and --output_com).')
     parser.add_argument('--tag', type=str, default="",
                         help='Optional custom tag for .com filenames (e.g., monomer1_qm_mm_TAG.com).')
+    parser.add_argument('--logfile', type=str, default=current_default_log_filename, # Use variable for default
+                        help=f'Specify log file name (default: {current_default_log_filename}).')
     
     args = parser.parse_args()
 
     # --- Setup Log File ---
+    # Use the logfile name from args, which has a default.
+    # Global LOG_FILENAME constant is not used directly here anymore for open().
+    effective_log_filename = args.logfile
     try:
-        log_file_handle = open(LOG_FILENAME, 'w')
+        log_file_handle = open(effective_log_filename, 'w')
         log_file_handle.write(f"GIQPy Run Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n") 
         log_file_handle.write(f"Arguments: {vars(args)}\n\n")
         log_file_handle.flush()
     except IOError as e:
-        print(f"ERROR: Could not open log file {LOG_FILENAME} for writing: {e}. Exiting.", file=sys.stderr)
+        print(f"CRITICAL ERROR: Could not open log file {effective_log_filename} for writing: {e}. Exiting.", file=sys.stderr)
         sys.exit(1)
 
 
-    # --- Initial Argument Checks ---
-    if not args.output_com and not args.output_xyz: 
-        err_msg = "No output requested. Please specify --output_com and/or --output_xyz."
+    # --- Argument Validation ---
+    user_intends_com_output = args.output_com is not None
+    user_intends_xyz_output = args.output_xyz is not None and args.output_xyz != 'none'
+
+    if not user_intends_com_output and not user_intends_xyz_output:
+        err_msg = "No output format selected. You must specify --output_com and/or --output_xyz."
         print(f"ERROR: {err_msg}", file=sys.stderr)
         write_to_log(err_msg, is_error=True)
         parser.error(err_msg)
@@ -784,29 +881,48 @@ Core Flags:
         print(f"ERROR: {err_msg}", file=sys.stderr)
         write_to_log(err_msg, is_error=True)
         parser.error(err_msg)
-    if args.eetg and args.aggregate != 2:
-        err_msg = "--eetg calculations require --aggregate=2 (a dimer system)."
-        print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
-        parser.error(err_msg)
-    if args.output_com == 'monomer' and args.eetg:
-        warn_msg = "Configuration: --output_com monomer is selected with --eetg. EETG is an aggregate/dimer property and will not be generated for the combined system."
-        print(f"WARNING: {warn_msg}")
-        write_to_log(warn_msg, is_warning=True)
-    
-    gaussian_keywords: Optional[List[str]] = None
-    if args.gauss_keywords:
+    if args.eetg:
+        if args.aggregate != 2:
+            err_msg = "--eetg calculations require --aggregate=2 (a dimer system)."
+            print(f"ERROR: {err_msg}", file=sys.stderr)
+            write_to_log(err_msg, is_error=True)
+            parser.error(err_msg)
+        if not user_intends_com_output:
+            err_msg = "--eetg calculations require .com file output. Please specify --output_com."
+            print(f"ERROR: {err_msg}", file=sys.stderr)
+            write_to_log(err_msg, is_error=True)
+            parser.error(err_msg)
+            
+    if user_intends_com_output and args.output_com == 'monomer' and args.eetg:
+        warn_msg = ("Configuration: --output_com set to 'monomer' with --eetg. "
+                    "EETG is an aggregate/dimer property. An EETG file for the dimer will be generated if --aggregate=2, "
+                    "but individual monomer .com files will also be generated as per --output_com monomer.")
+        print(f"INFO: {warn_msg}") # Changed to INFO as it's a clarification
+        write_to_log(warn_msg, is_warning=False) # Not strictly a warning of misconfiguration
+
+    # Gaussian keywords handling
+    gaussian_keywords_for_calcs: Optional[List[str]] = None # Variable to hold loaded keywords
+    if user_intends_com_output:
+        if not args.gauss_keywords:
+            err_msg = "A Gaussian keywords file must be provided via --gauss_keywords when --output_com is specified."
+            print(f"ERROR: {err_msg}", file=sys.stderr)
+            write_to_log(err_msg, is_error=True)
+            parser.error(err_msg)
+        
         if not os.path.exists(args.gauss_keywords) or os.path.getsize(args.gauss_keywords) == 0:
             err_msg = f"Gaussian keywords file '{args.gauss_keywords}' not found or is empty."
             print(f"ERROR: {err_msg}", file=sys.stderr)
             write_to_log(err_msg, is_error=True)
-            raise FileNotFoundError(err_msg)
-        gaussian_keywords = load_keywords_from_file(args.gauss_keywords)
-    elif args.output_com in ['monomer', 'dimer', 'both']: 
-        err_msg = "--gauss_keywords must be provided when generating .com files (i.e., when --output_com is 'monomer', 'dimer', or 'both')."
-        print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
-        parser.error(err_msg)
+            # parser.error(err_msg) # This would exit before log flushes sometimes
+            raise FileNotFoundError(err_msg) # More standard for file issues
+        gaussian_keywords_for_calcs = load_keywords_from_file(args.gauss_keywords)
+    elif args.gauss_keywords: # Keywords provided, but .com output not requested
+        warn_msg = ("--gauss_keywords was provided, but --output_com was not specified. "
+                    "The keywords file will be ignored as no .com files are being generated.")
+        print(f"WARNING: {warn_msg}")
+        write_to_log(warn_msg, is_warning=True)
+
+    # --- End of Argument Validation ---
 
     # Load qm_aggregate_xyz if provided
     qm_aggregate_coords_override: Optional[CoordType] = None
@@ -820,19 +936,20 @@ Core Flags:
             if len(agg_lines) < num_atoms_in_agg_file + 2: raise ValueError("QM aggregate XYZ has fewer lines than atom count.")
             
             temp_agg_coords_list = []
+            # Atom symbols from qm_aggregate_xyz are ignored; only coordinates are used.
             for ln_idx, ln_content in enumerate(agg_lines[2 : num_atoms_in_agg_file + 2]):
                 parts = ln_content.split()
-                if len(parts) >= 4:
+                if len(parts) >= 4: # Expect atom_symbol x y z
                     try: temp_agg_coords_list.append([float(p) for p in parts[1:4]])
-                    except ValueError: raise ValueError(f"Malformed coord in {args.qm_aggregate_xyz} line {ln_idx+3}")
-                else: raise ValueError(f"Malformed line in {args.qm_aggregate_xyz} line {ln_idx+3}")
+                    except ValueError: raise ValueError(f"Malformed coordinate in {args.qm_aggregate_xyz} line {ln_idx+3}: '{ln_content.strip()}'")
+                else: raise ValueError(f"Malformed line (expected atom_symbol x y z) in {args.qm_aggregate_xyz} line {ln_idx+3}: '{ln_content.strip()}'")
             qm_aggregate_coords_override = np.array(temp_agg_coords_list)
             write_to_log(f"Successfully loaded {qm_aggregate_coords_override.shape[0]} aggregate coordinates from {args.qm_aggregate_xyz}.")
-        except Exception as e:
+        except Exception as e: # Catch generic exceptions during file load/parse
             err_msg = f"Failed to load or parse --qm_aggregate_xyz file '{args.qm_aggregate_xyz}': {e}"
             print(f"ERROR: {err_msg}", file=sys.stderr)
             write_to_log(err_msg, is_error=True)
-            sys.exit(1)
+            sys.exit(1) # Critical error, cannot proceed
 
 
     base_output_dir: str = os.getcwd() 
@@ -840,30 +957,38 @@ Core Flags:
     processed_frames_list: List[Tuple[Optional[str], str, str]] = split_frames(args.single_xyz, args.traj_xyz, args.frames, base_output_dir)
     total_frames_to_process = len(processed_frames_list)
     
-    if total_frames_to_process == 0 and args.traj_xyz : 
-        err_msg = f"No frames were found or could be processed from trajectory: {args.traj_xyz}"
+    if total_frames_to_process == 0: # This implies an issue with split_frames or input files
+        err_msg = f"No frames were found or could be processed from the input XYZ source."
+        if args.traj_xyz:
+             err_msg = f"No frames were found or could be processed from trajectory: {args.traj_xyz}"
+        elif args.single_xyz:
+             err_msg = f"Could not process single XYZ file: {args.single_xyz}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
         write_to_log(err_msg, is_error=True)
         sys.exit(1)
-    elif total_frames_to_process == 0 and args.single_xyz:
-         err_msg = f"Could not process single XYZ file: {args.single_xyz}"
-         print(f"ERROR: {err_msg}", file=sys.stderr)
-         write_to_log(err_msg, is_error=True)
-         sys.exit(1)
 
 
     monomers_metadata_list: List[Dict[str, Any]]
     solvent_metadata: Dict[str, Any]
-    monomers_metadata_list, solvent_metadata = load_system_info(args.system_info, args.aggregate)
+    try:
+        monomers_metadata_list, solvent_metadata = load_system_info(args.system_info, args.aggregate)
+    except Exception as e: # Catch errors from load_system_info (FileNotFound, ValueError)
+        print(f"CRITICAL ERROR loading system_info: {e}", file=sys.stderr)
+        write_to_log(f"CRITICAL ERROR loading system_info: {e}", is_error=True)
+        sys.exit(1)
+
     solvent_name_str = solvent_metadata.get(JSON_KEY_NAME, "solvent")
 
 
     if len(monomers_metadata_list) != args.aggregate:
+        # This check might be redundant if load_system_info already validates based on aggregate count
         msg = (f"Number of monomer entries in system_info ({len(monomers_metadata_list)}) "
                f"does not match --aggregate ({args.aggregate}).")
         print(f"ERROR: {msg}", file=sys.stderr)
         write_to_log(msg, is_error=True)
-        raise ValueError(msg)
+        # raise ValueError(msg) # Or sys.exit(1)
+        sys.exit(1)
+
 
     combined_system_term: str = "dimer" if args.aggregate == 2 else "aggregate"
     tag_for_filename = f"_{args.tag}" if args.tag else "" 
@@ -873,15 +998,26 @@ Core Flags:
         sys.stdout.write(f"Processed Frames: 0 / {total_frames_to_process}")
         sys.stdout.flush()
 
+    # --- Determine what types of files to generate based on user's explicit choices ---
+    # .com file generation flags
+    # If args.output_com is None (flag not given), these will be False.
+    actual_gen_monomer_com: bool = (user_intends_com_output and args.output_com in ['monomer', 'both'])
+    actual_gen_aggregate_com: bool = (user_intends_com_output and args.output_com in ['dimer', 'both'])
+
+    # .xyz file generation flags
+    # If args.output_xyz is None or 'none' (flag not given or explicitly disabled), these will be False.
+    actual_gen_monomer_xyz: bool = (user_intends_xyz_output and args.output_xyz in ['monomer', 'both'])
+    actual_gen_aggregate_xyz: bool = (user_intends_xyz_output and args.output_xyz in ['dimer', 'both'])
+
 
     for frame_idx, (frame_id_str, temp_xyz_input_filepath, current_frame_output_dir) in enumerate(processed_frames_list):
-        if args.traj_xyz and total_frames_to_process > 0:
-            sys.stdout.write('\r' + ' ' * 50 + '\r') 
+        if args.traj_xyz and total_frames_to_process > 0 and frame_idx > 0: # Avoid double printing for first frame
+            sys.stdout.write('\r' + ' ' * 50 + '\r') # Clear previous frame count
             sys.stdout.flush()
 
-        logged_output_dir_name = frame_id_str if frame_id_str else "." 
+        logged_output_dir_name = frame_id_str if frame_id_str else os.path.basename(current_frame_output_dir) # Use dir name if single
         
-        frame_processing_message = f"--- Processing Frame {frame_idx + 1} / {total_frames_to_process} ({'ID: '+frame_id_str if frame_id_str else 'single file'}) -> Output Dir: '{logged_output_dir_name}' ---"
+        frame_processing_message = f"--- Processing Frame {frame_idx + 1} / {total_frames_to_process} ({'ID: '+frame_id_str if frame_id_str else 'Single File'}) -> Output Dir: '{logged_output_dir_name}' ---"
         print(frame_processing_message) 
         write_to_log(f"\n\n{frame_processing_message}") 
 
@@ -893,132 +1029,161 @@ Core Flags:
         core_coords_for_dist_calc: CoordType
         n_atoms_per_monomer_for_dist_calc: List[int]
 
-        monomer_qm_regions, aggregate_qm_region, non_qm_sol_groups, qm_solvent_flags, \
-        core_coords_for_dist_calc, n_atoms_per_monomer_for_dist_calc = \
-            localize_solvent_and_prepare_regions(
-                temp_xyz_input_filepath,
-                args.system_info,
-                args.aggregate,
-                args.qm_solvent,
-                qm_aggregate_coords_override=qm_aggregate_coords_override 
-            )
+        try:
+            monomer_qm_regions, aggregate_qm_region, non_qm_sol_groups, qm_solvent_flags, \
+            core_coords_for_dist_calc, n_atoms_per_monomer_for_dist_calc = \
+                localize_solvent_and_prepare_regions(
+                    temp_xyz_input_filepath,
+                    args.system_info,
+                    args.aggregate,
+                    args.qm_solvent, # qm_solvent radius
+                    qm_aggregate_coords_override=qm_aggregate_coords_override 
+                )
+        except Exception as e:
+            err_msg = f"Error during solvent localization/region preparation for frame {frame_id_str if frame_id_str else 'single'}: {e}"
+            print(f"ERROR: {err_msg}", file=sys.stderr)
+            write_to_log(err_msg, is_error=True)
+            # Decide if to skip frame or exit. For now, skip frame if in trajectory.
+            if args.traj_xyz:
+                write_to_log(f"Skipping frame {frame_id_str} due to error.", is_warning=True)
+                if args.traj_xyz and total_frames_to_process > 0:
+                    sys.stdout.write(f"\rProcessed Frames (with error on current): {frame_idx + 1} / {total_frames_to_process}")
+                    sys.stdout.flush()
+                continue # Skip to next frame
+            else:
+                sys.exit(1) # Exit for single file processing error
+
 
         monomer_names_from_meta: List[str] = [m.get(JSON_KEY_NAME, f'm{idx+1}') for idx, m in enumerate(monomers_metadata_list)]
         base_system_name_for_title: str
-        if len(set(monomer_names_from_meta)) == 1: 
+        if len(set(monomer_names_from_meta)) == 1 and monomers_metadata_list : # check list not empty
             base_system_name_for_title = monomer_names_from_meta[0]
         else: 
-            base_system_name_for_title = "_".join(monomer_names_from_meta)
+            base_system_name_for_title = "_".join(monomer_names_from_meta) if monomer_names_from_meta else "system" # handle empty case
         
         distance_str_for_title: str = ""
         if args.aggregate >= 2:
             dist = calculate_centroid_distance_between_first_two(core_coords_for_dist_calc, n_atoms_per_monomer_for_dist_calc)
             if dist is not None:
-                distance_str_for_title = f"(m1-m2 centroid distance: {dist:.2f} Å)"
+                distance_str_for_title = f"(m1-m2 centroid dist: {dist:.2f} A)" # Angstrom symbol
         
         aggregate_title_base: str = f"{base_system_name_for_title} {combined_system_term} {distance_str_for_title}".strip()
         aggregate_xyz_comment_base: str = f"{base_system_name_for_title} {combined_system_term} {distance_str_for_title}".strip()
 
-        mm_solvent_point_charges: Optional[List[MMChargeTupleType]] = None
+        mm_solvent_point_charges_xyz_q: Optional[List[MMChargeTupleType]] = None # Format (x,y,z,q)
         system_has_mm_solvent: bool = False
         if args.mm_solvent == AUTO_MM_SOLVENT_TRIGGER:
             write_to_log("Attempting to auto-detect MM solvent from non-QM solvent molecules...") 
             if non_qm_sol_groups:
-                mm_solvent_point_charges = assign_charges_to_solvent_molecules(non_qm_sol_groups, solvent_metadata)
-                if mm_solvent_point_charges:
-                    write_to_log(f"Generated {len(mm_solvent_point_charges)} MM solvent point charges from auto-detection.") 
-                    system_has_mm_solvent = True
-                else:
-                    write_to_log("Auto-detection found non-QM solvent groups, but no charges were assigned (check solvent definition or warnings).") 
+                try:
+                    mm_solvent_point_charges_xyz_q = assign_charges_to_solvent_molecules(non_qm_sol_groups, solvent_metadata)
+                    if mm_solvent_point_charges_xyz_q:
+                        write_to_log(f"Generated {len(mm_solvent_point_charges_xyz_q)} MM solvent point charges (x,y,z,q) from auto-detection.") 
+                        system_has_mm_solvent = True
+                    else:
+                        write_to_log("Auto-detection found non-QM solvent groups, but no charges were assigned (check solvent definition or warnings).") 
+                except ValueError as e:
+                     write_to_log(f"Error assigning charges to auto-detected MM solvent: {e}", is_error=True)
             else:
-                write_to_log("No non-QM solvent molecules found to treat as MM solvent.") 
-        elif args.mm_solvent is not None: 
+                write_to_log("No non-QM solvent molecules found to treat as MM solvent via auto-detection.") 
+        elif args.mm_solvent is not None: # Path to MM solvent file is provided
             write_to_log(f"Loading MM solvent charges from file: {args.mm_solvent}") 
-            loaded_mm_charges_from_file: List[MMChargeTupleType] = []
+            loaded_mm_charges_from_file_chg_xyz: List[Tuple[float,float,float,float]] = [] # charge, x, y, z
             try:
                 with open(args.mm_solvent, 'r') as f_mm_sol_file:
                     lines = f_mm_sol_file.readlines()
-                    if len(lines) >=2: 
+                    if len(lines) >=2: # Expect 2 header lines
                         for line_num, line_content in enumerate(lines[2:]): 
                             parts = line_content.strip().split()
-                            if len(parts) == 4: 
+                            if len(parts) == 4: # charge x y z
                                 try:
-                                    loaded_mm_charges_from_file.append((float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])))
+                                    # File format is charge x y z
+                                    charge_val = float(parts[0])
+                                    x_val, y_val, z_val = float(parts[1]), float(parts[2]), float(parts[3])
+                                    loaded_mm_charges_from_file_chg_xyz.append((charge_val, x_val, y_val, z_val))
                                 except ValueError:
                                     warn_msg = f"Non-numeric value in MM solvent file {args.mm_solvent} on line {line_num + 3}: {line_content.strip()}"
                                     print(f"WARNING: {warn_msg}")
                                     write_to_log(warn_msg, is_warning=True)
-                            elif parts:
-                                warn_msg = f"Malformed MM solvent line in {args.mm_solvent} on line {line_num + 3}: {line_content.strip()}"
+                            elif parts: # Line not empty, but not 4 parts
+                                warn_msg = f"Malformed MM solvent line in {args.mm_solvent} on line {line_num + 3} (expected 4 values, got {len(parts)}): {line_content.strip()}"
                                 print(f"WARNING: {warn_msg}")
                                 write_to_log(warn_msg, is_warning=True)
                     else:
-                        warn_msg = f"MM solvent file {args.mm_solvent} is too short, expected XYZ-like format with 2 header lines."
+                        warn_msg = f"MM solvent file {args.mm_solvent} is too short (expected XYZ-like format with 2 header lines). No charges loaded."
                         print(f"WARNING: {warn_msg}")
                         write_to_log(warn_msg, is_warning=True)
 
-                if loaded_mm_charges_from_file:
-                    mm_solvent_point_charges = loaded_mm_charges_from_file
+                if loaded_mm_charges_from_file_chg_xyz:
+                    # Convert to (x,y,z,q) for internal consistency for Gaussian
+                    mm_solvent_point_charges_xyz_q = [(x,y,z,q) for q,x,y,z in loaded_mm_charges_from_file_chg_xyz]
                     system_has_mm_solvent = True
-                    write_to_log(f"Loaded {len(mm_solvent_point_charges)} MM solvent point charges from file.") 
+                    write_to_log(f"Loaded {len(mm_solvent_point_charges_xyz_q)} MM solvent point charges (x,y,z,q) from file.") 
                 else:
-                    warn_msg = f"No valid MM solvent charges loaded from file {args.mm_solvent}."
-                    print(f"WARNING: {warn_msg}")
-                    write_to_log(warn_msg, is_warning=True)
+                    # This warning might be redundant if the file was short/malformed and already warned.
+                    if os.path.exists(args.mm_solvent): # Only warn if file exists but no charges loaded
+                        warn_msg = f"No valid MM solvent charges loaded from file {args.mm_solvent}."
+                        print(f"WARNING: {warn_msg}")
+                        write_to_log(warn_msg, is_warning=True)
             except FileNotFoundError:
-                warn_msg = f"MM solvent file {args.mm_solvent} not found. No MM solvent will be used."
+                warn_msg = f"MM solvent file {args.mm_solvent} not found. No MM solvent from file will be used."
                 print(f"WARNING: {warn_msg}")
                 write_to_log(warn_msg, is_warning=True)
         
-        if args.output_xyz: 
-            generate_monomer_xyz = args.output_xyz in ['monomer', 'both']
-            generate_aggregate_xyz = args.output_xyz in ['dimer', 'both'] 
-
-            write_to_log("Writing QM region and MM solvent XYZ files...") 
-            if generate_aggregate_xyz:
+        # XYZ File Generation Block
+        if user_intends_xyz_output: # Master switch for this section
+            write_to_log("Writing detailed QM region and MM solvent XYZ files (if applicable)...") 
+            if actual_gen_aggregate_xyz: # Use the specific flag
                 agg_qm_atoms_xyz, agg_qm_coords_xyz = aggregate_qm_region
                 qm_sol_desc_agg = f" + qm {solvent_name_str}" if qm_solvent_flags.get('aggregate_has_added_qm_solvent') else ""
-                xyz_comment_for_aggregate_qm = f"{aggregate_xyz_comment_base}{qm_sol_desc_agg}"
-                write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_qm.xyz'), 
+                xyz_comment_for_aggregate_qm = f"{aggregate_xyz_comment_base} QM REGION{qm_sol_desc_agg}"
+                write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_qm_region.xyz'), 
                           agg_qm_atoms_xyz, agg_qm_coords_xyz, 
                           comment=xyz_comment_for_aggregate_qm)
             
-            if generate_monomer_xyz:
+            if actual_gen_monomer_xyz: # Use the specific flag
                 for i, (mono_qm_atoms_xyz, mono_qm_coords_xyz) in enumerate(monomer_qm_regions):
                     monomer_name_from_meta = monomers_metadata_list[i].get(JSON_KEY_NAME, f'm{i+1}')
                     mono_has_qm_sol = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
                     qm_sol_desc_mono = f" + its unique qm {solvent_name_str}" if mono_has_qm_sol else ""
-                    xyz_comment_for_monomer_qm = f"{monomer_name_from_meta} monomer{i+1}{qm_sol_desc_mono}"
-                    write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_qm.xyz'),
+                    xyz_comment_for_monomer_qm = f"{monomer_name_from_meta} monomer{i+1} QM REGION{qm_sol_desc_mono}"
+                    write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_qm_region.xyz'),
                               mono_qm_atoms_xyz, mono_qm_coords_xyz,
                               comment=xyz_comment_for_monomer_qm)
             
-            if system_has_mm_solvent and mm_solvent_point_charges:
-                mm_solvent_charges_as_first_col: ChargeListType = [charge_val for charge_val, x,y,z in mm_solvent_point_charges]
-                mm_solvent_coords_for_xyz: CoordType = np.array([(x,y,z) for q,x,y,z in mm_solvent_point_charges])
+            if system_has_mm_solvent and mm_solvent_point_charges_xyz_q:
+                # For XYZ output, use charges as the "atom type" column
+                mm_solvent_charges_for_xyz_col: ChargeListType = [q_val for x,y,z,q_val in mm_solvent_point_charges_xyz_q]
+                mm_solvent_coords_for_xyz: CoordType = np.array([(x,y,z) for x,y,z,q_val in mm_solvent_point_charges_xyz_q])
                 
-                if generate_aggregate_xyz:
-                    mm_solvent_agg_comment = f"mm {solvent_name_str} for {base_system_name_for_title} {combined_system_term}"
-                    write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_mm_solvent.xyz'), 
-                              mm_solvent_charges_as_first_col, mm_solvent_coords_for_xyz, 
-                              comment=mm_solvent_agg_comment)
-                if generate_monomer_xyz:
-                    for i in range(args.aggregate):
-                         monomer_name_from_meta = monomers_metadata_list[i].get(JSON_KEY_NAME, f'm{i+1}')
-                         mm_solvent_mono_comment = f"mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
-                         write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_mm_solvent.xyz'),
-                                   mm_solvent_charges_as_first_col, mm_solvent_coords_for_xyz,
-                                   comment=mm_solvent_mono_comment)
-            elif args.mm_solvent and args.output_xyz: 
-                warn_msg = "MM solvent was specified but no point charges were loaded/generated; cannot write MM solvent XYZ files."
-                print(f"WARNING: {warn_msg}")
-                write_to_log(warn_msg, is_warning=True)
+                if mm_solvent_coords_for_xyz.size > 0 : # Only write if there are MM solvent charges
+                    if actual_gen_aggregate_xyz: # Tied to aggregate XYZ output
+                        mm_solvent_agg_comment = f"MM point charges ({solvent_name_str}) for {base_system_name_for_title} {combined_system_term}"
+                        write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_mm_solvent_charges.xyz'), 
+                                  mm_solvent_charges_for_xyz_col, mm_solvent_coords_for_xyz, 
+                                  comment=mm_solvent_agg_comment)
+                    if actual_gen_monomer_xyz: # Tied to monomer XYZ output
+                        for i in range(args.aggregate): # Create one for each monomer context if requested
+                             monomer_name_from_meta = monomers_metadata_list[i].get(JSON_KEY_NAME, f'm{i+1}')
+                             mm_solvent_mono_comment = f"MM point charges ({solvent_name_str}) for {monomer_name_from_meta} monomer{i+1} context"
+                             write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_mm_solvent_charges.xyz'),
+                                       mm_solvent_charges_for_xyz_col, mm_solvent_coords_for_xyz, # Same set of MM charges
+                                       comment=mm_solvent_mono_comment)
+            elif args.mm_solvent and user_intends_xyz_output : # mm_solvent was requested, but no charges loaded/generated
+                warn_msg = ("MM solvent was specified (--mm_solvent) but no point charges were loaded or generated; "
+                            "cannot write MM solvent charges XYZ files.")
+                # Only warn if some XYZ output was actually requested for the entity (monomer/aggregate)
+                if actual_gen_aggregate_xyz or actual_gen_monomer_xyz:
+                    print(f"WARNING: {warn_msg}")
+                    write_to_log(warn_msg, is_warning=True)
 
-        mm_embedding_for_monomer: List[List[MMChargeTupleType]] = [[] for _ in range(args.aggregate)] 
-        if args.mm_monomer is not None:
-            if args.mm_monomer == ['0']: 
+        # MM Monomer Embedding Charges
+        mm_embedding_charges_for_each_monomer: List[List[MMChargeTupleType]] = [[] for _ in range(args.aggregate)] 
+        if args.mm_monomer is not None: # If the --mm_monomer flag was used at all
+            if args.mm_monomer == ['0']: # Special keyword '0'
                 write_to_log("Applying zero charges for other-monomer embedding as per --mm_monomer 0.")
                 current_atom_idx = 0
+                # core_coords_for_dist_calc are the original coordinates from the input XYZ for the core
                 core_monomer_coords_list: List[CoordType] = []
                 for num_atoms_in_mono in n_atoms_per_monomer_for_dist_calc: 
                     core_monomer_coords_list.append(
@@ -1032,150 +1197,186 @@ Core Flags:
                     for i in range(args.aggregate): 
                         embedding_charges_for_monomer_i: List[MMChargeTupleType] = []
                         for j in range(args.aggregate): 
-                            if i == j:
-                                continue
+                            if i == j: continue # Don't embed a monomer with itself
                             other_monomer_coords = core_monomer_coords_list[j]
-                            for coord_row in other_monomer_coords:
-                                embedding_charges_for_monomer_i.append((coord_row[0], coord_row[1], coord_row[2], 0.0))
-                        mm_embedding_for_monomer[i] = embedding_charges_for_monomer_i
-
-            elif len(args.mm_monomer) == args.aggregate and args.aggregate > 0: 
-                all_monomer_explicit_charges = [load_monomer_charges_from_file(f) for f in args.mm_monomer]
-                if args.aggregate == 1:
-                     warn_msg = "--mm_monomer provided with file(s) for --aggregate=1. This charge file will not be used for inter-monomer embedding."
-                     print(f"WARNING: {warn_msg}")
-                     write_to_log(warn_msg, is_warning=True)
-                elif args.aggregate == 2: 
-                    mm_embedding_for_monomer[0] = all_monomer_explicit_charges[1] 
-                    mm_embedding_for_monomer[1] = all_monomer_explicit_charges[0] 
-                else: 
-                    for i in range(args.aggregate):
-                        combined_embedding_charges = []
-                        for j in range(args.aggregate):
-                            if i == j: continue
-                            combined_embedding_charges.extend(all_monomer_explicit_charges[j])
-                        mm_embedding_for_monomer[i] = combined_embedding_charges
-            elif len(args.mm_monomer) == 0: 
-                 write_to_log("Note: --mm_monomer was specified without files (empty list). No inter-monomer MM charges will be applied.") 
-            else: 
-                warn_msg = (f"--mm_monomer was given with {len(args.mm_monomer)} file(s) "
-                            f"(and not as '0'). Expected 0, 1 (for '0' option), or {args.aggregate} files. "
-                            f"MM monomer embedding might be skipped or incorrect.")
-                print(f"WARNING: {warn_msg}")
-                write_to_log(warn_msg, is_warning=True)
-
-
-        total_sys_charge: Union[int, float] = sum(m[JSON_KEY_CHARGE] for m in monomers_metadata_list)
-        total_sys_spin: int = int(np.prod([m[JSON_KEY_SPIN_MULT] for m in monomers_metadata_list])) if monomers_metadata_list else 1
-        
-        generate_monomer_com_files: bool = args.output_com in ['monomer', 'both']
-        generate_aggregate_com_files: bool = args.output_com in ['dimer', 'both'] 
-
-        if args.eetg: 
-            if generate_aggregate_com_files: 
-                write_to_log(f"Writing EETG {combined_system_term} .com file...") 
-                eetg_has_qm_solvent_in_fragments = qm_solvent_flags.get('monomer_0_has_added_qm_solvent', False) or \
-                                                 qm_solvent_flags.get('monomer_1_has_added_qm_solvent', False)
-                solvent_desc_suffix = get_solvent_descriptor_suffix(eetg_has_qm_solvent_in_fragments, system_has_mm_solvent)
-                
-                eetg_filename_base = f"{combined_system_term}_eetg{solvent_desc_suffix}"
-                eetg_filename = f"{eetg_filename_base}{tag_for_filename}.com"
-
-                solvent_info_for_eetg_title = f" in {solvent_name_str}" if (eetg_has_qm_solvent_in_fragments or system_has_mm_solvent) else ""
-                eetg_title = f"{aggregate_title_base}{solvent_info_for_eetg_title} EET Analysis".strip()
-                
-                m1_atoms_eetg, m1_coords_eetg = monomer_qm_regions[0]
-                m2_atoms_eetg, m2_coords_eetg = monomer_qm_regions[1]
-
-                write_com_file( # Using the unified writer
-                    os.path.join(current_frame_output_dir, eetg_filename),
-                    gaussian_keywords if gaussian_keywords is not None else [], 
-                    eetg_title,
-                    total_sys_charge, total_sys_spin,
-                    [], np.array([]), # No single QM region for EETG wrapper
-                    mm_charges_list=mm_solvent_point_charges, # System-wide MM solvent
-                    fragment_definitions=[
-                        (m1_atoms_eetg, m1_coords_eetg, monomers_metadata_list[0][JSON_KEY_CHARGE], monomers_metadata_list[0][JSON_KEY_SPIN_MULT]),
-                        (m2_atoms_eetg, m2_coords_eetg, monomers_metadata_list[1][JSON_KEY_CHARGE], monomers_metadata_list[1][JSON_KEY_SPIN_MULT])
-                    ]
-                )
-            elif not generate_aggregate_com_files and args.eetg : 
-                 write_to_log(f"Skipping EETG {combined_system_term}: --output_com is set to 'monomer'.") 
-        
-        if generate_monomer_com_files:
-            write_to_log(f"Writing VEE monomer .com files...") 
-            for i in range(args.aggregate):
-                if i < len(monomer_qm_regions): 
-                    mono_meta = monomers_metadata_list[i]
-                    mono_qm_atoms, mono_qm_coords = monomer_qm_regions[i]
+                            for coord_row in other_monomer_coords: # x,y,z
+                                embedding_charges_for_monomer_i.append((coord_row[0], coord_row[1], coord_row[2], 0.0)) # (x,y,z,q=0)
+                        mm_embedding_charges_for_each_monomer[i] = embedding_charges_for_monomer_i
+            elif args.mm_monomer: # List of file(s) provided
+                if len(args.mm_monomer) == args.aggregate :
+                    write_to_log(f"Loading MM charges for inter-monomer embedding from {args.aggregate} specified file(s).")
+                    all_monomer_explicit_charges_xyz_q = [load_monomer_charges_from_file(f) for f in args.mm_monomer]
                     
-                    monomer_has_added_qm_solvent = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
-                    solvent_desc_suffix = get_solvent_descriptor_suffix(monomer_has_added_qm_solvent, system_has_mm_solvent)
-                    mono_vee_filename_base = f"monomer{i+1}{solvent_desc_suffix}"
-                    mono_vee_filename = f"{mono_vee_filename_base}{tag_for_filename}.com"
-                    
-                    solvent_info_for_mono_title = f" in {solvent_name_str}" if (monomer_has_added_qm_solvent or system_has_mm_solvent) else ""
-                    mono_vee_title = f"{mono_meta.get(JSON_KEY_NAME)} monomer{i+1}{solvent_info_for_mono_title}".strip() # Generalized from VEE
-                    
-                    # Combine mm_embedding for this monomer and system-wide mm_solvent
-                    all_mm_for_monomer = []
-                    if mm_embedding_for_monomer[i]:
-                        all_mm_for_monomer.extend(mm_embedding_for_monomer[i])
-                    if mm_solvent_point_charges: # mm_solvent_point_charges are (q,x,y,z)
-                        # Convert to (x,y,z,q) for consistency if needed, or handle in write_com_file
-                        # For now, assume write_com_file handles the (q,x,y,z) from mm_solvent_point_charges correctly
-                        # and (x,y,z,q) from mm_embedding_for_monomer.
-                        # Let's standardize to (x,y,z,q) for the combined list.
-                        for q_s, x_s, y_s, z_s in mm_solvent_point_charges:
-                            all_mm_for_monomer.append((x_s, y_s, z_s, q_s))
-
-
-                    write_com_file(
-                        os.path.join(current_frame_output_dir, mono_vee_filename),
-                        gaussian_keywords if gaussian_keywords is not None else [], 
-                        mono_vee_title,
-                        mono_meta[JSON_KEY_CHARGE], mono_meta[JSON_KEY_SPIN_MULT],
-                        mono_qm_atoms, mono_qm_coords, 
-                        mm_charges_list=all_mm_for_monomer if all_mm_for_monomer else None
-                    )
-                else:
-                    warn_msg = f"Data for monomer {i+1} not available in monomer_qm_regions. Skipping its VEE file."
+                    if args.aggregate == 1:
+                         # This case means one file was provided for one monomer.
+                         # It won't be used for "other-monomer" embedding, but was loaded.
+                         warn_msg = ("--mm_monomer provided with 1 file for --aggregate=1. "
+                                     "This charge file will be loaded but not used for inter-monomer embedding as there are no 'other' monomers.")
+                         print(f"WARNING: {warn_msg}")
+                         write_to_log(warn_msg, is_warning=True)
+                    else: # aggregate > 1
+                        for i in range(args.aggregate): # For monomer_i being the QM region
+                            combined_embedding_charges_for_i = []
+                            for j in range(args.aggregate): # Iterate over all monomers to get charges from others
+                                if i == j: continue # QM monomer is not part of its own MM embedding
+                                combined_embedding_charges_for_i.extend(all_monomer_explicit_charges_xyz_q[j])
+                            mm_embedding_charges_for_each_monomer[i] = combined_embedding_charges_for_i
+                else: # Number of files does not match aggregate count
+                    warn_msg = (f"--mm_monomer was given {len(args.mm_monomer)} charge file(s), "
+                                f"but --aggregate is {args.aggregate}. Expected {args.aggregate} file(s) "
+                                f"for this mode of MM monomer embedding. MM monomer embedding charges will be skipped.")
                     print(f"WARNING: {warn_msg}")
                     write_to_log(warn_msg, is_warning=True)
-        
-        if generate_aggregate_com_files and not args.eetg:
-            write_to_log(f"Writing VEE {combined_system_term} .com file...") 
-            aggregate_has_added_qm_solvent = qm_solvent_flags.get('aggregate_has_added_qm_solvent', False)
-            solvent_desc_suffix = get_solvent_descriptor_suffix(aggregate_has_added_qm_solvent, system_has_mm_solvent)
-            agg_vee_filename_base = f"{combined_system_term}{solvent_desc_suffix}"
-            agg_vee_filename = f"{agg_vee_filename_base}{tag_for_filename}.com"
+            # else: args.mm_monomer is an empty list (e.g. --mm_monomer without args), this case is unlikely with nargs='*'
+            # but if it happened, no charges would be loaded.
 
-            solvent_info_for_agg_title = f" in {solvent_name_str}" if (aggregate_has_added_qm_solvent or system_has_mm_solvent) else ""
-            agg_vee_title = f"{aggregate_title_base}{solvent_info_for_agg_title}".strip() # Generalized from VEE
+        # COM File Generation Block
+        if user_intends_com_output: # Master switch for this section
+            total_sys_charge_from_meta: Union[int, float] = sum(m[JSON_KEY_CHARGE] for m in monomers_metadata_list)
+            # Spin multiplicity combination: for singlets, product is 1. For doublet+singlet -> doublet. Triplet+singlet -> triplet.
+            # A simple product works for S=0 (mult=1), S=1/2 (mult=2), S=1 (mult=3) if we consider mult = 2S+1
+            # This is a simplification; proper spin coupling is complex.
+            # Assuming the user provides meaningful spin_mult for monomers for combined system.
+            # Let's take the spin mult of the first monomer for the aggregate if not EETG, or handle as per Gaussian rules for fragments.
+            # For EETG, fragment spins are given. For combined, usually lowest energy state is sought.
+            # Sticking to original product logic for now for non-EETG aggregate.
+            total_sys_spin_mult_from_meta: int
+            if monomers_metadata_list:
+                 # If all are singlets, product is 1. If one is doublet and rest singlets, product is 2.
+                 # If two doublets, product is 4 (could be singlet or triplet). Gaussian usually defaults to lowest.
+                 # This is a naive combination. For many cases, sum of (mult-1) then +1 might be more representative of total |Sz|.
+                 # Let's assume the first monomer's spin for the aggregate if not doing EETG, or if user wants specific total spin,
+                 # they should ensure their keywords or EETG setup handles it.
+                 # For now, using the product as it was, but it's a point of potential refinement.
+                 product_spin = 1
+                 for m in monomers_metadata_list:
+                     product_spin *= m[JSON_KEY_SPIN_MULT]
+                 total_sys_spin_mult_from_meta = product_spin if product_spin > 0 else 1 # Ensure positive
+            else:
+                total_sys_spin_mult_from_meta = 1
+
+
+            if args.eetg: # EETG has priority for aggregate if selected
+                if actual_gen_aggregate_com: # Only if aggregate .com output is chosen
+                    write_to_log(f"Writing EETG {combined_system_term} .com file...") 
+                    # For EETG, QM solvent is associated with fragments.
+                    # A general "eetg_has_qm_solvent" could be if ANY fragment has it.
+                    eetg_frags_have_qm_solvent = qm_solvent_flags.get('monomer_0_has_added_qm_solvent', False) or \
+                                                 (args.aggregate > 1 and qm_solvent_flags.get('monomer_1_has_added_qm_solvent', False))
+                    
+                    solvent_desc_suffix = get_solvent_descriptor_suffix(eetg_frags_have_qm_solvent, system_has_mm_solvent)
+                    eetg_filename_base = f"{combined_system_term}_eetg{solvent_desc_suffix}"
+                    eetg_filename = f"{eetg_filename_base}{tag_for_filename}.com"
+
+                    solvent_info_for_eetg_title = ""
+                    if eetg_frags_have_qm_solvent and system_has_mm_solvent: solvent_info_for_eetg_title = f" with QM & MM {solvent_name_str}"
+                    elif eetg_frags_have_qm_solvent: solvent_info_for_eetg_title = f" with QM {solvent_name_str}"
+                    elif system_has_mm_solvent: solvent_info_for_eetg_title = f" with MM {solvent_name_str}"
+                    eetg_title = f"{aggregate_title_base}{solvent_info_for_eetg_title} EET Analysis".strip()
+                    
+                    # EETG requires exactly 2 monomers from metadata and regions
+                    if args.aggregate == 2 and len(monomer_qm_regions) == 2 and len(monomers_metadata_list) == 2:
+                        m1_atoms_eetg, m1_coords_eetg = monomer_qm_regions[0]
+                        m2_atoms_eetg, m2_coords_eetg = monomer_qm_regions[1]
+
+                        frag_defs = [
+                            (m1_atoms_eetg, m1_coords_eetg, monomers_metadata_list[0][JSON_KEY_CHARGE], monomers_metadata_list[0][JSON_KEY_SPIN_MULT]),
+                            (m2_atoms_eetg, m2_coords_eetg, monomers_metadata_list[1][JSON_KEY_CHARGE], monomers_metadata_list[1][JSON_KEY_SPIN_MULT])
+                        ]
+                        # Overall charge/spin for EETG is sum of fragment charges, and typically lowest spin state (e.g., singlet if both frags are singlets/closed-shell).
+                        # Gaussian's fragment keyword handles this. The overall charge/spin passed to write_com_file for EETG
+                        # should be the total system charge and a "common" or resultant spin (often 1 for neutral closed-shell fragments).
+                        # The sum of charges is easy. Resultant spin needs care.
+                        # Let's use the sum of charges and the `total_sys_spin_mult_from_meta` as calculated before.
+                        # Gaussian will use the fragment specific charge/spin primarily.
+                        write_com_file(
+                            os.path.join(current_frame_output_dir, eetg_filename),
+                            gaussian_keywords_for_calcs if gaussian_keywords_for_calcs is not None else [], 
+                            eetg_title,
+                            total_sys_charge_from_meta, # Overall system charge
+                            total_sys_spin_mult_from_meta, # Overall system spin (often overridden by fragment specifics)
+                            [], np.array([]), # No primary QM region for EETG wrapper itself
+                            mm_charges_list=mm_solvent_point_charges_xyz_q, # System-wide MM solvent (x,y,z,q)
+                            fragment_definitions=frag_defs
+                        )
+                    else:
+                        write_to_log("EETG selected but system is not --aggregate=2 or monomer region data is incomplete. Skipping EETG file.", is_warning=True)
+                # If actual_gen_aggregate_com is false but --eetg was true, this part is skipped.
+                # A warning for --eetg without --output_com dimer/both might be useful earlier. (Added in arg validation)
+
+            # Standard (non-EETG) COM files
+            if actual_gen_monomer_com: # Check specific flag
+                write_to_log(f"Writing Monomer .com files (if not exclusively EETG aggregate)...") 
+                for i in range(args.aggregate):
+                    if i < len(monomer_qm_regions) and i < len(monomers_metadata_list): 
+                        mono_meta = monomers_metadata_list[i]
+                        mono_qm_atoms, mono_qm_coords = monomer_qm_regions[i]
+                        
+                        monomer_has_added_qm_solvent = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
+                        solvent_desc_suffix = get_solvent_descriptor_suffix(monomer_has_added_qm_solvent, system_has_mm_solvent)
+                        mono_filename_base = f"monomer{i+1}{solvent_desc_suffix}"
+                        mono_filename = f"{mono_filename_base}{tag_for_filename}.com"
+                        
+                        solvent_info_for_mono_title = ""
+                        if monomer_has_added_qm_solvent and system_has_mm_solvent: solvent_info_for_mono_title = f" with QM & MM {solvent_name_str}"
+                        elif monomer_has_added_qm_solvent: solvent_info_for_mono_title = f" with QM {solvent_name_str}"
+                        elif system_has_mm_solvent: solvent_info_for_mono_title = f" with MM {solvent_name_str}"
+                        
+                        mono_title = f"{mono_meta.get(JSON_KEY_NAME, f'Monomer {i+1}')}{solvent_info_for_mono_title}".strip()
+                        
+                        # Combine mm_embedding for this monomer and system-wide mm_solvent
+                        # Both lists should be in (x,y,z,q) format
+                        all_mm_charges_for_this_monomer_calc: List[MMChargeTupleType] = []
+                        if mm_embedding_charges_for_each_monomer[i]: # These are (x,y,z,q)
+                            all_mm_charges_for_this_monomer_calc.extend(mm_embedding_charges_for_each_monomer[i])
+                        if mm_solvent_point_charges_xyz_q: # These are also (x,y,z,q)
+                            all_mm_charges_for_this_monomer_calc.extend(mm_solvent_point_charges_xyz_q)
+
+                        write_com_file(
+                            os.path.join(current_frame_output_dir, mono_filename),
+                            gaussian_keywords_for_calcs if gaussian_keywords_for_calcs is not None else [], 
+                            mono_title,
+                            mono_meta[JSON_KEY_CHARGE], mono_meta[JSON_KEY_SPIN_MULT],
+                            mono_qm_atoms, mono_qm_coords, 
+                            mm_charges_list=all_mm_charges_for_this_monomer_calc if all_mm_charges_for_this_monomer_calc else None
+                        )
+                    else:
+                        warn_msg = f"Data for monomer {i+1} not available. Skipping its .com file."
+                        print(f"WARNING: {warn_msg}")
+                        write_to_log(warn_msg, is_warning=True)
             
-            agg_qm_atoms, agg_qm_coords = aggregate_qm_region
-            
-            # For aggregate, only system-wide MM solvent applies, not inter-monomer embedding
-            mm_charges_for_aggregate = []
-            if mm_solvent_point_charges:
-                 for q_s, x_s, y_s, z_s in mm_solvent_point_charges:
-                    mm_charges_for_aggregate.append((x_s, y_s, z_s, q_s))
+            if actual_gen_aggregate_com and not args.eetg: # Non-EETG aggregate
+                write_to_log(f"Writing Aggregate ({combined_system_term}) .com file...") 
+                aggregate_has_added_qm_solvent = qm_solvent_flags.get('aggregate_has_added_qm_solvent', False)
+                solvent_desc_suffix = get_solvent_descriptor_suffix(aggregate_has_added_qm_solvent, system_has_mm_solvent)
+                agg_filename_base = f"{combined_system_term}{solvent_desc_suffix}"
+                agg_filename = f"{agg_filename_base}{tag_for_filename}.com"
 
+                solvent_info_for_agg_title = ""
+                if aggregate_has_added_qm_solvent and system_has_mm_solvent: solvent_info_for_agg_title = f" with QM & MM {solvent_name_str}"
+                elif aggregate_has_added_qm_solvent: solvent_info_for_agg_title = f" with QM {solvent_name_str}"
+                elif system_has_mm_solvent: solvent_info_for_agg_title = f" with MM {solvent_name_str}"
+                agg_title = f"{aggregate_title_base}{solvent_info_for_agg_title}".strip()
+                
+                agg_qm_atoms, agg_qm_coords = aggregate_qm_region
+                
+                # For aggregate, only system-wide MM solvent applies (mm_solvent_point_charges_xyz_q).
+                # Inter-monomer embedding charges are not used for the combined aggregate calculation itself.
+                write_com_file(
+                    os.path.join(current_frame_output_dir, agg_filename),
+                    gaussian_keywords_for_calcs if gaussian_keywords_for_calcs is not None else [], 
+                    agg_title,
+                    total_sys_charge_from_meta, total_sys_spin_mult_from_meta,
+                    agg_qm_atoms, agg_qm_coords, 
+                    mm_charges_list=mm_solvent_point_charges_xyz_q if mm_solvent_point_charges_xyz_q else None
+                )
 
-            write_com_file(
-                os.path.join(current_frame_output_dir, agg_vee_filename),
-                gaussian_keywords if gaussian_keywords is not None else [], 
-                agg_vee_title,
-                total_sys_charge, total_sys_spin,
-                agg_qm_atoms, agg_qm_coords, 
-                mm_charges_list=mm_charges_for_aggregate if mm_charges_for_aggregate else None
-            )
-
+        # Cleanup temporary XYZ for this frame if it was created
         if args.traj_xyz and os.path.exists(temp_xyz_input_filepath) and TEMP_FRAME_XYZ_FILENAME in temp_xyz_input_filepath :
             try:
                 os.remove(temp_xyz_input_filepath)
                 write_to_log(f"Cleaned up temporary file: {temp_xyz_input_filepath}")
-            except OSError as e:
+            except OSError as e: # Catch potential errors during file removal
                 warn_msg = f"Could not remove temporary file {temp_xyz_input_filepath}: {e}"
                 print(f"WARNING: {warn_msg}")
                 write_to_log(warn_msg, is_warning=True)
@@ -1184,8 +1385,8 @@ Core Flags:
             sys.stdout.write(f"\rProcessed Frames: {frame_idx + 1} / {total_frames_to_process}")
             sys.stdout.flush()
 
-    if args.traj_xyz and total_frames_to_process > 0:
-        sys.stdout.write("\n")
+    if args.traj_xyz and total_frames_to_process > 0: # After loop
+        sys.stdout.write("\n") # Newline after progress bar
         sys.stdout.flush()
 
     final_message = "\nAll processing complete."
@@ -1193,19 +1394,38 @@ Core Flags:
     write_to_log(final_message)
 
     if log_file_handle:
-        log_file_handle.close()
+        log_file_handle.close() # Ensure log file is closed
 
 if __name__ == '__main__':
+    # log_file_handle is global, initialize to None before main() in case of early exit.
+    # However, it's more robustly handled if main() itself initializes it.
+    # For the except block here, log_file_handle might not be set if error is before its opening.
     try:
         main()
-    except Exception as e:
-        err_msg_critical = f"An unhandled error occurred: {e}"
+    except FileNotFoundError as e: # Specific error for missing files often raised by script
+        # Log file might not be open yet if error is in arg parsing before log setup.
+        # Check if log_file_handle is not None and is open.
+        err_msg_critical = f"CRITICAL FILE ERROR: {e}. Please check file paths and permissions."
         print(f"ERROR: {err_msg_critical}", file=sys.stderr)
-        if log_file_handle: 
+        if log_file_handle and not log_file_handle.closed: 
             write_to_log(err_msg_critical, is_error=True)
             import traceback
             write_to_log(traceback.format_exc())
-            log_file_handle.close()
+        sys.exit(1)
+    except ValueError as e: # Specific error for bad values
+        err_msg_critical = f"CRITICAL VALUE ERROR: {e}. Please check input values and formats."
+        print(f"ERROR: {err_msg_critical}", file=sys.stderr)
+        if log_file_handle and not log_file_handle.closed:
+            write_to_log(err_msg_critical, is_error=True)
+            traceback.print_exc(file=log_file_handle) # Print full traceback to log
+        sys.exit(1)
+    except Exception as e: # Catch any other unhandled exceptions
+        err_msg_critical = f"AN UNHANDLED CRITICAL ERROR OCCURRED: {e}"
+        print(f"ERROR: {err_msg_critical}", file=sys.stderr)
+        if log_file_handle and not log_file_handle.closed: 
+            write_to_log(err_msg_critical, is_error=True)
+            import traceback
+            write_to_log(traceback.format_exc()) # Log the full traceback
         sys.exit(1)
     finally:
         if log_file_handle and not log_file_handle.closed:
