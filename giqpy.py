@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #=================================================================================================
-# Sayan Adhikari | May 27, 2025 | https://github.com/sayan919
+# Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
 #=================================================================================================
 """
 Generate Inputs for QM/MM systems for Gaussian or TeraChem
@@ -43,8 +43,8 @@ Flags:
     --tag (Optional) : custom tag for generated .com filenames (e.g., ..._TAG.com).
     
     --logfile (Optional) : Specify log file name (default: run.log).
-"""
 
+"""
 import argparse
 import os
 import json
@@ -769,40 +769,40 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter, 
         description="Generate Gaussian .com and .xyz files from single or trajectory XYZ with QM/MM options.",
         epilog="""
-        -------------------------------------------------------------------------------
-        Core Flags:
-        --single_xyz <file.xyz> or --traj_xyz <file.xyz> :
-                                        Input coordinate file(s). One of these is required.
-        --frames <N>                    : Number of frames if --traj_xyz is used (required with --traj_xyz).
-        --aggregate <M>               : Number of core monomer units (e.g., 2 for a dimer). Required.
-        --system_info <file.json>     : Single JSON defining all monomers and solvent properties. Required.
-        
-        Output Control (At least one of --output_com or --output_xyz must be specified):
-        --output_com [monomer|dimer|both] : Generate Gaussian .com input files.
-                                            If flag is present without a value, defaults to "both".
-                                            Requires --gauss_keywords.
-        --output_xyz [monomer|dimer|both] : Generate detailed .xyz files for QM regions and MM solvent.
-                                            If flag is present without a value, defaults to "both".
-        --gauss_keywords <file.txt>   : Text file with Gaussian route section keywords.
-                                            Required if --output_com is specified.
-        QM/MM Setup:
-        --qm_aggregate_xyz <file.xyz> : Optional: Use coordinates from this file for the core aggregate,
-                                        overriding those from the main input XYZ. Atom order must match.
-        --qm_solvent <radius>         : Defines QM solvent shell by radius (Å) around core atoms (default: 5.0).
-        --mm_solvent [file.xyz]       : Optional. Defines MM solvent.
-                                        - If path provided: XYZ-like file (charge x y z per line, skips 2 headers).
-                                        - If flag used alone (i.e., --mm_solvent with no file path):
-                                            Auto-detects non-QM solvent from input XYZ and uses charges from system_info.json.
-        --mm_monomer [0|file1 ...]    : Optional. Defines MM charges for embedding from other monomers.
-                                        - '0': Embeds other monomers with zero charges at their atomic positions.
-                                        - File(s) provided: File(s) with "charge x y z" for MM charges.
-                                            Provide one file per monomer in the aggregate if this mode is used.
-        --eetg                        : Flag to generate only EETG input for dimers (requires --aggregate=2 and --output_com).
-        
-        Other:
-        --tag <TAG_STRING>            : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
-        --logfile <filename>          : Specify log file name (default: giqpy_run.log).
-        -------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+Core Flags:
+  --single_xyz <file.xyz> or --traj_xyz <file.xyz> :
+                                  Input coordinate file(s). One of these is required.
+  --frames <N>                    : Number of frames if --traj_xyz is used (required with --traj_xyz).
+  --aggregate <M>               : Number of core monomer units (e.g., 2 for a dimer). Required.
+  --system_info <file.json>     : Single JSON defining all monomers and solvent properties. Required.
+  
+Output Control (At least one of --output_com or --output_xyz must be specified):
+  --output_com [monomer|dimer|both] : Generate Gaussian .com input files.
+                                    If flag is present without a value, defaults to "both".
+                                    Requires --gauss_keywords.
+  --output_xyz [monomer|dimer|both] : Generate detailed .xyz files for QM regions and MM solvent.
+                                    If flag is present without a value, defaults to "both".
+  --gauss_keywords <file.txt>   : Text file with Gaussian route section keywords.
+                                    Required if --output_com is specified.
+QM/MM Setup:
+  --qm_aggregate_xyz <file.xyz> : Optional: Use coordinates from this file for the core aggregate,
+                                  overriding those from the main input XYZ. Atom order must match.
+  --qm_solvent <radius>         : Defines QM solvent shell by radius (Å) around core atoms (default: 5.0).
+  --mm_solvent [file.xyz]       : Optional. Defines MM solvent.
+                                  - If path provided: XYZ-like file (charge x y z per line, skips 2 headers).
+                                  - If flag used alone (i.e., --mm_solvent with no file path):
+                                    Auto-detects non-QM solvent from input XYZ and uses charges from system_info.json.
+  --mm_monomer [0|file1 ...]    : Optional. Defines MM charges for embedding from other monomers.
+                                  - '0': Embeds other monomers with zero charges at their atomic positions.
+                                  - File(s) provided: File(s) with "charge x y z" for MM charges.
+                                    Provide one file per monomer in the aggregate if this mode is used.
+  --eetg                        : Flag to generate only EETG input for dimers (requires --aggregate=2 and --output_com).
+  
+Other:
+  --tag <TAG_STRING>            : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
+  --logfile <filename>          : Specify log file name (default: giqpy_run.log).
+-------------------------------------------------------------------------------
         """
     )
     group_xyz_input = parser.add_mutually_exclusive_group(required=True)
@@ -995,7 +995,7 @@ def main() -> None:
 
 
     if args.traj_xyz and total_frames_to_process > 0 :
-        sys.stdout.write(f"Processed Frames: 0 / {total_frames_to_process}")
+        sys.stdout.write(f"\nProcessed Frames: 0 / {total_frames_to_process}\n")
         sys.stdout.flush()
 
     # --- Determine what types of files to generate based on user's explicit choices ---
@@ -1136,7 +1136,7 @@ def main() -> None:
             if actual_gen_aggregate_xyz: # Use the specific flag
                 agg_qm_atoms_xyz, agg_qm_coords_xyz = aggregate_qm_region
                 qm_sol_desc_agg = f" + qm {solvent_name_str}" if qm_solvent_flags.get('aggregate_has_added_qm_solvent') else ""
-                xyz_comment_for_aggregate_qm = f"{aggregate_xyz_comment_base} QM REGION{qm_sol_desc_agg}"
+                xyz_comment_for_aggregate_qm = f"{aggregate_xyz_comment_base} qm region{qm_sol_desc_agg}"
                 write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_qm_region.xyz'), 
                           agg_qm_atoms_xyz, agg_qm_coords_xyz, 
                           comment=xyz_comment_for_aggregate_qm)
@@ -1146,7 +1146,7 @@ def main() -> None:
                     monomer_name_from_meta = monomers_metadata_list[i].get(JSON_KEY_NAME, f'm{i+1}')
                     mono_has_qm_sol = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
                     qm_sol_desc_mono = f" + its unique qm {solvent_name_str}" if mono_has_qm_sol else ""
-                    xyz_comment_for_monomer_qm = f"{monomer_name_from_meta} monomer{i+1} QM REGION{qm_sol_desc_mono}"
+                    xyz_comment_for_monomer_qm = f"{monomer_name_from_meta} monomer{i+1} qm region{qm_sol_desc_mono}"
                     write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_qm_region.xyz'),
                               mono_qm_atoms_xyz, mono_qm_coords_xyz,
                               comment=xyz_comment_for_monomer_qm)
@@ -1158,15 +1158,15 @@ def main() -> None:
                 
                 if mm_solvent_coords_for_xyz.size > 0 : # Only write if there are MM solvent charges
                     if actual_gen_aggregate_xyz: # Tied to aggregate XYZ output
-                        mm_solvent_agg_comment = f"MM point charges ({solvent_name_str}) for {base_system_name_for_title} {combined_system_term}"
-                        write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_mm_solvent_charges.xyz'), 
+                        mm_solvent_agg_comment = f"{solvent_name_str} mm point charges for {base_system_name_for_title} {combined_system_term}"
+                        write_xyz(os.path.join(current_frame_output_dir, f'{combined_system_term}_mm_solvent.xyz'), 
                                   mm_solvent_charges_for_xyz_col, mm_solvent_coords_for_xyz, 
                                   comment=mm_solvent_agg_comment)
                     if actual_gen_monomer_xyz: # Tied to monomer XYZ output
                         for i in range(args.aggregate): # Create one for each monomer context if requested
                              monomer_name_from_meta = monomers_metadata_list[i].get(JSON_KEY_NAME, f'm{i+1}')
-                             mm_solvent_mono_comment = f"MM point charges ({solvent_name_str}) for {monomer_name_from_meta} monomer{i+1} context"
-                             write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_mm_solvent_charges.xyz'),
+                             mm_solvent_mono_comment = f"{solvent_name_str} mm point charges for {monomer_name_from_meta} monomer{i+1}"
+                             write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_mm_solvent.xyz'),
                                        mm_solvent_charges_for_xyz_col, mm_solvent_coords_for_xyz, # Same set of MM charges
                                        comment=mm_solvent_mono_comment)
             elif args.mm_solvent and user_intends_xyz_output : # mm_solvent was requested, but no charges loaded/generated
