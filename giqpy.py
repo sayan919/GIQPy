@@ -631,11 +631,11 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
 def get_solvent_descriptor_suffix(entity_has_added_qm_solvent: bool, system_has_mm_solvent: bool) -> str:
     """Determines the solvent descriptor part of the .com filename (without .com extension)."""
     if entity_has_added_qm_solvent and system_has_mm_solvent:
-        return "_qmsol_mmsol" # More descriptive
+        return "_qm_mm" # More descriptive
     elif entity_has_added_qm_solvent:
-        return "_qmsol"
+        return "_qm"
     elif system_has_mm_solvent:
-        return "_mmsol"
+        return "_mm"
     else:
         return "" 
 
@@ -661,11 +661,11 @@ def write_com_file(
             inserted = False
             for i, kw_line in enumerate(final_keywords):
                 if kw_line.strip().startswith("#"):
-                    final_keywords.insert(i + 1, "charge") # Add 'charge' on the next line
+                    final_keywords.insert(i + 1, "# charge") # Add 'charge' on the next line
                     inserted = True
                     break
             if not inserted: # No line starting with #, so just append.
-                 final_keywords.append("charge")
+                 final_keywords.append("# charge")
 
 
     try:
@@ -1261,6 +1261,7 @@ Other:
                             mm_solvent_mono_comment = f"mm monomer + mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
                         else:
                             mm_solvent_mono_comment = f"mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
+
                         output_path = os.path.join(current_frame_output_dir, f'monomer{i+1}_mm.xyz')
                         write_xyz(output_path, charges_col, coords_arr, comment=mm_solvent_mono_comment)
                         
@@ -1298,9 +1299,8 @@ Other:
                              print(f"\nWARNING: {full_warn_msg}") # Ensure newline
                              write_to_log(full_warn_msg, is_warning=True)
         
-        # COM File Generation Block (This logic is mostly unchanged from your provided script)
+        # COM File Generation Block 
         if user_intends_com_output:
-            # ... (all the COM file generation logic remains as is) ...
             total_sys_charge_from_meta: Union[int, float] = sum(m[JSON_KEY_CHARGE] for m in monomers_metadata_list)
             total_sys_spin_mult_from_meta: int
             if monomers_metadata_list:
@@ -1365,9 +1365,9 @@ Other:
                         if monomer_has_added_qm_solvent and system_has_mm_solvent: solvent_info_for_mono_title = f" with QM & MM {solvent_name_str}"
                         elif monomer_has_added_qm_solvent: solvent_info_for_mono_title = f" with QM {solvent_name_str}"
                         elif system_has_mm_solvent: solvent_info_for_mono_title = f" with MM {solvent_name_str}"
-                        
-                        mono_title = f"{mono_meta.get(JSON_KEY_NAME, f'Monomer {i+1}')}{solvent_info_for_mono_title}".strip()
-                        
+
+                        mono_title = f"{mono_meta.get(JSON_KEY_NAME, f'Monomer {i+1}')} monomer {i+1} {solvent_info_for_mono_title}".strip()
+
                         all_mm_charges_for_this_monomer_calc: List[MMChargeTupleType] = []
                         if mm_embedding_charges_for_each_monomer[i]: 
                             all_mm_charges_for_this_monomer_calc.extend(mm_embedding_charges_for_each_monomer[i])
