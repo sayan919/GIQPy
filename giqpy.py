@@ -1254,9 +1254,13 @@ Other:
                     if monomer_combined_mm_charges_for_xyz: # If there are any charges to write
                         charges_col = [q_val for x,y,z,q_val in monomer_combined_mm_charges_for_xyz]
                         coords_arr = np.array([(x,y,z) for x,y,z,q_val in monomer_combined_mm_charges_for_xyz])
-
                         # Original filename and comment from user's script version
-                        mm_solvent_mono_comment = f"mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
+                        # mm_solvent_mono_comment = f"mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
+                        other_monomer_mm_charges_present = bool(mm_embedding_charges_for_each_monomer[i])
+                        if other_monomer_mm_charges_present:
+                            mm_solvent_mono_comment = f"mm monomer + mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
+                        else:
+                            mm_solvent_mono_comment = f"mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
                         output_path = os.path.join(current_frame_output_dir, f'monomer{i+1}_mm.xyz')
                         write_xyz(output_path, charges_col, coords_arr, comment=mm_solvent_mono_comment)
                         
