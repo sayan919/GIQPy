@@ -34,75 +34,51 @@ This is single entry script to generate :
 
 
 ## Arguments
-- `--single_xyz`:
+`--traj` *(Required)*:
   - ***Number of inputs:*** 1 file
-  - Path to a single-frame XYZ file containing coordinates for entire system (core monomers + solvent)
-
- **OR (one of the two is required)**
-- `--traj_xyz`: 
-  - ***Number of inputs:*** 1 file
-  - Path to a multi-frame XYZ trajectory; each frame in standard XYZ format
+  - Multi-frame trajectory XYZ file. For a single-frame input use `--nFrames 1`.
 ---
-- `--frames`: (Only used with `--traj_xyz`)
+`--nFrames` *(Optional)*:
   - ***Number of inputs:*** 1 integer
-  - Number of frames to process when `--traj_xyz` is used; if omitted all frames are processed
+  - Number of frames to process (default: all).
 ---
-- `--aggregate`: (Required)
+`--nDyes` *(Required)*:
   - ***Number of inputs:*** 1 integer
   - Number of core monomer units.
-  - Filename if aggregate=1: monomer, 2: dimer, >=2: aggregate
 ---
-- `--qm_aggregate_xyz`: (optional)
-  - ***Number of inputs:*** 1 file
-  - Path to the custom QM aggregate XYZ file.
-  - If provided, this file will be used to define the QM region for the aggregate.
-  - If not provided, the code will use the `--single_xyz` or `--traj_xyz` file to define the QM region.
----
-- `--system_info`: (Required)
+`--system_info` *(Required)*:
   - ***Number of inputs:*** 1 file
   - JSON defining monomer and solvent metadata (format described below)
 ---
-- `--qm_solvent`: (Optional, default 5.0)
+`--qmSol_radius` *(Optional)*:
   - ***Number of inputs:*** 1 float
-  - Radius in Å for selecting explicit QM solvent shell around core atoms 
+  - Radius in Å for selecting explicit QM solvent shell around core atoms
 ---
-- `--mm_monomer`: (Optional)
+`--mm_monomer` *(Optional)*:
   - ***Number of inputs:*** 0 or N files
   - Include MM embedding charges from other monomers
   - `0` = all atoms are assigned zero charges
-  -  List charge files with “charge x y z” per line for `N` monomers if `--aggregate N`
+  -  List charge files with “charge x y z” per line for `N` monomers if `--nDyes N`
   - Omit flag for no MM monomer charges
 ---
-- `--mm_solvent`: (Optional)
+`--mm_solvent` *(Optional)*:
   - ***Number of inputs:*** 0 or 1 file
   - Include MM solvent embedding
   - flag alone to auto-detect non-QM solvent and assign charges from `system_info`
   - or provide XYZ-like file path of charges
   - omit flag for no MM solvent
 ---
-- `--output_com`: (Optional, default `both`)
+`--gauss_files` *(Optional)*:
   - ***Number of inputs:*** 0 or 1 string : `monomer`, `dimer`, `both`
-  - `monomer` : write only monomer .com files with QM and MM solvent if provided
-  - `dimer`   : write only dimer .com files with QM and MM solvent if provided
-  - `both`    : write both monomer and dimer .com files 
+  - Generates Gaussian `.com` files. Requires `--gauss_keywords` if specified.
 ---
-- `--gauss_keywords`: (only used with `--output_com`)
+`--gauss_keywords` *(Conditionally Required)*:
   - ***Number of inputs:*** 1 file
   - Plain-text file of Gaussian route section keywords (one per line)
-  - Include PCM/solvation options here as needed
 ---
-- `--eetg`: (Optional)
-  - ***Number of inputs:*** 0 (only flag)
-  - Generate only EETG `.com` for dimers (requires `--aggregate 2`)
-  - Skips dimer VEE `.com`
-  - This flag is mutually exclusive with `--output_com`
----
-- `--output_xyz`: (Optional, default `both`)
-  - ***Number of inputs:*** 0 or 1 string : `monomer`, `dimer`, `both`
-  - `monomer` : write monomer + QM solvent .xyz files + their corresponding MM solvent xyz files separately
-  - `dimer`   : write dimer + QM solvent .xyz files + their corresponding MM solvent xyz files separately
-  - `both`    : write monomer and dimer QM .xyz files and the corresponding MM solvent xyz files separately
-  - `none` or omit flag : do not write any XYZ files
+`--eetg` *(Optional)*:
+  - ***Number of inputs:*** 0 (flag)
+  - Generate only EETG `.com` for dimers (requires `--nDyes 2`)
 ---
 - `--tag`: (Optional)
   - ***Number of inputs:*** 0 or 1 string
@@ -191,14 +167,12 @@ entry describing the solvent.
 
 
 ## Outputs
-- .com files when `--output_com` and `--gauss_keywords` are specified:
+- .com files when `--gauss_files` and `--gauss_keywords` are specified:
   - monomer `.com` files: `monomer1.com`, `monomer2.com`, etc. : including qm, mm solvent if provided.
   - dimer `.com` files: `dimer`, etc. : including qm, mm solvent if provided.
   - EETG file for dimers when `--eetg` is specified.
 
-- XYZ files when `--output_xyz` is specified :
-  - monomer XYZ files: `monomer<#>_qm.xyz` and its corresponding `monomer<#>_mm_solvent.xyz`
-  - dimer XYZ files: `dimer_qm.xyz` and its corresponding `dimer_mm_solvent.xyz`
+- XYZ files are always produced for the QM region and MM solvent when present.
 
 - Temporary files (`_current_frame_data.xyz`) are deleted after use when processing trajectories.
 - `run.log` is created in the current working directory.

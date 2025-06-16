@@ -6,12 +6,10 @@
 Generate Inputs for QM/MM systems for Gaussian or TeraChem
 
 Flags:
-    --single_xyz (Required) : Single frame XYZ file (or --traj_xyz).
-    OR,
-    --traj_xyz (Required) : Multi-frame trajectory XYZ file.
+    --traj (Required) : Multi-frame trajectory XYZ file. Use --nFrames 1 for a single frame.
 
-    --nFrames (Required with --traj_xyz) : Number of frames (default: all).
-    
+    --nFrames (Optional) : Number of frames to process (default: all).
+
     --system_info (Required) : Single JSON defining all monomers and solvent properties.
     
     --nDyes (Required) : Number of core monomer units.
@@ -28,11 +26,11 @@ Flags:
     
     --eetg (Optional) : Flag to generate only EETG input for dimers (requires --nDyes=2).
     
-    --output_com (Optional) : monomer/dimer/both; 
+    --gauss_files (Optional) : monomer/dimer/both;
                               Generates Gaussian .com input files.
                               If specified, --gauss_keywords is required.
 
-    --gauss_keywords (Conditionally Required) : Gaussian keywords (required if --output_com is used).
+    --gauss_keywords (Conditionally Required) : Gaussian keywords (required if --gauss_files is used).
     
     --tag (Optional) : custom tag for generated .com filenames (e.g., ..._TAG.com).
     
@@ -92,37 +90,17 @@ def write_to_log(message: str, is_error: bool = False, is_warning: bool = False)
 # --- Functions ---
 
 def split_frames(
-    single_xyz_path: Optional[str], 
-    traj_xyz_path: Optional[str], 
-    num_frames_to_extract: Optional[int], 
+    traj_xyz_path: str,
+    num_frames_to_extract: Optional[int],
     base_output_dir_for_traj: str
-) -> List[Tuple[Optional[str], str, str]]:
+) -> List[Tuple[str, str, str]]:
     """
     Processes single or trajectory XYZ files.
     For trajectories, creates frame-specific directories and temporary XYZ files within them.
     Returns a list of (frame_id_str, path_to_xyz_for_frame, output_dir_for_frame) tuples.
     """
-    processed_frames_info: List[Tuple[Optional[str], str, str]] = []
+    processed_frames_info: List[Tuple[str, str, str]] = []
 
-    if single_xyz_path:
-        # Ensure base output directory exists even for single_xyz if it's not current dir
-        if base_output_dir_for_traj != "." and not os.path.exists(base_output_dir_for_traj):
-            try:
-                os.makedirs(base_output_dir_for_traj, exist_ok=True)
-            except OSError as e:
-                err_msg = f"Could not create output directory {base_output_dir_for_traj}: {e}"
-                print(f"ERROR: {err_msg}", file=sys.stderr)
-                if log_file_handle: write_to_log(err_msg, is_error=True)
-                raise
-        processed_frames_info.append((None, single_xyz_path, base_output_dir_for_traj))
-        return processed_frames_info
-
-    if not traj_xyz_path: 
-        # This case should ideally not be reached if logic in main is correct
-        # (i.e., one of single_xyz_path or traj_xyz_path must be provided).
-        print("ERROR: Trajectory path is None, but single_xyz_path was also None.", file=sys.stderr)
-        if log_file_handle: write_to_log("Trajectory path is None, but single_xyz_path was also None.", is_error=True)
-        return [] # Or raise an error
 
     try:
         with open(traj_xyz_path, 'r') as f:
@@ -641,18 +619,17 @@ def main() -> None:
         epilog="""
 -------------------------------------------------------------------------------
 Core Flags:
-  --single_xyz <file.xyz> or --traj_xyz <file.xyz> :
-                                  Input coordinate file(s). One of these is required.
-  --nFrames <N>                  : Number of frames if --traj_xyz is used (required with --traj_xyz).
+  --traj <file.xyz>             : Multi-frame trajectory XYZ file.
+  --nFrames <N>                 : Number of frames to process (default: all).
   --nDyes <M>                    : Number of core monomer units (e.g., 2 for a dimer). Required.
   --system_info <file.json>     : Single JSON defining all monomers and solvent properties. Required.
   
 Output Control:
-  --output_com [monomer|dimer|both] : Generate Gaussian .com input files.
-                                    If flag is present without a value, defaults to "both".
-                                    Requires --gauss_keywords.
+  --gauss_files [monomer|dimer|both] : Generate Gaussian .com input files.
+                                      If flag is present without a value, defaults to "both".
+                                      Requires --gauss_keywords.
   --gauss_keywords <file.txt>   : Text file with Gaussian route section keywords.
-                                    Required if --output_com is specified.
+                                    Required if --gauss_files is specified.
 QM/MM Setup:
   --qmSol_radius <radius>         : Defines QM solvent shell by radius (Å) around core atoms (default: 5.0).
   --mm_solvent [file.xyz]       : Optional. Defines MM solvent.
@@ -663,7 +640,7 @@ QM/MM Setup:
                                   - '0': Embeds other monomers with zero charges at their atomic positions.
                                   - File(s) provided: File(s) with "charge x y z" for MM charges.
                                     Provide one file per monomer in the aggregate if this mode is used.
-  --eetg                        : Flag to generate only EETG input for dimers (requires --nDyes=2 and --output_com).
+  --eetg                        : Flag to generate only EETG input for dimers (requires --nDyes=2 and --gauss_files).
   
 Other:
   --tag <TAG_STRING>            : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
@@ -671,24 +648,23 @@ Other:
 -------------------------------------------------------------------------------
         """
     )
-    group_xyz_input = parser.add_mutually_exclusive_group(required=True)
-    group_xyz_input.add_argument('--single_xyz', type=str, help='Single-frame XYZ file for the entire system.')
-    group_xyz_input.add_argument('--traj_xyz', type=str, help='Multi-frame XYZ trajectory for the entire system.')
-    
+    parser.add_argument('--traj', type=str, required=True,
+                        help='Multi-frame trajectory XYZ file. Use --nFrames 1 for a single frame.')
+
     parser.add_argument('--nFrames', type=int,
-                        help='Number of frames from trajectory (required with --traj_xyz).')
+                        help='Number of frames to process (default: all).')
     parser.add_argument('--nDyes', type=int, required=True,
                         help='Number of core monomer units (e.g., 1 for monomer, 2 for dimer).')
     parser.add_argument('--system_info', type=str, required=True,
                         help='JSON file with monomer and solvent metadata.')
     
     # --- Modified output arguments ---
-    parser.add_argument('--output_com', nargs='?', choices=['monomer', 'dimer', 'both'], const='both', default=None,
+    parser.add_argument('--gauss_files', nargs='?', choices=['monomer', 'dimer', 'both'], const='both', default=None,
                         help=('Generate Gaussian .com input files. '
                               'If flag is present without a value, defaults to "both". '
                               'Requires --gauss_keywords if specified.'))
-    parser.add_argument('--gauss_keywords', type=str, default=None, 
-                        help='File with Gaussian keywords (required if --output_com is specified).')
+    parser.add_argument('--gauss_keywords', type=str, default=None,
+                        help='File with Gaussian keywords (required if --gauss_files is specified).')
     # --- End of modified output arguments ---
 
     parser.add_argument('--qmSol_radius', type=float, default=5.0, # Ensure qm_solvent always has a default
@@ -696,7 +672,7 @@ Other:
     parser.add_argument('--mm_monomer', type=str, nargs='*', # Can be '0' or list of files
                         help='MM solvent: XYZ-like charge file, or flag alone for auto-detect from non-QM solvent and system_info.')
     parser.add_argument('--eetg', action='store_true',
-                        help='Generate EETG input for dimer (requires --nDyes 2 and --output_com).')
+                        help='Generate EETG input for dimer (requires --nDyes 2 and --gauss_files).')
     parser.add_argument('--tag', type=str, default="",
                         help='Optional custom tag for .com filenames (e.g., monomer1_qm_mm_TAG.com).')
     parser.add_argument('--logfile', type=str, default=current_default_log_filename, # Use variable for default
@@ -719,13 +695,8 @@ Other:
 
 
     # --- Argument Validation ---
-    user_intends_com_output = args.output_com is not None
+    user_intends_com_output = args.gauss_files is not None
 
-    if args.traj_xyz and args.nFrames is None:
-        err_msg = "--nFrames is required when --traj_xyz is used."
-        print(f"ERROR: {err_msg}", file=sys.stderr)
-        write_to_log(err_msg, is_error=True)
-        parser.error(err_msg) 
     if args.nDyes < 1:
         err_msg = "--nDyes must be at least 1."
         print(f"ERROR: {err_msg}", file=sys.stderr)
@@ -738,15 +709,15 @@ Other:
             write_to_log(err_msg, is_error=True)
             parser.error(err_msg)
         if not user_intends_com_output:
-            err_msg = "--eetg calculations require .com file output. Please specify --output_com."
+            err_msg = "--eetg calculations require .com file output. Please specify --gauss_files."
             print(f"ERROR: {err_msg}", file=sys.stderr)
             write_to_log(err_msg, is_error=True)
             parser.error(err_msg)
             
-    if user_intends_com_output and args.output_com == 'monomer' and args.eetg:
-        warn_msg = ("Configuration: --output_com set to 'monomer' with --eetg. "
+    if user_intends_com_output and args.gauss_files == 'monomer' and args.eetg:
+        warn_msg = ("Configuration: --gauss_files set to 'monomer' with --eetg. "
                     "EETG is an aggregate/dimer property. An EETG file for the dimer will be generated if --nDyes=2, "
-                    "but individual monomer .com files will also be generated as per --output_com monomer.")
+                    "but individual monomer .com files will also be generated as per --gauss_files monomer.")
         print(f"INFO: {warn_msg}") # Changed to INFO as it's a clarification
         write_to_log(warn_msg, is_warning=False) # Not strictly a warning of misconfiguration
 
@@ -755,7 +726,7 @@ Other:
     if user_intends_com_output:
         import gen_gauss_files as gf
         if not args.gauss_keywords:
-            err_msg = "A Gaussian keywords file must be provided via --gauss_keywords when --output_com is specified."
+            err_msg = "A Gaussian keywords file must be provided via --gauss_keywords when --gauss_files is specified."
             print(f"ERROR: {err_msg}", file=sys.stderr)
             write_to_log(err_msg, is_error=True)
             parser.error(err_msg)
@@ -768,7 +739,7 @@ Other:
             raise FileNotFoundError(err_msg) # More standard for file issues
         gaussian_keywords_for_calcs = gf.load_keywords_from_file(args.gauss_keywords)
     elif args.gauss_keywords: # Keywords provided, but .com output not requested
-        warn_msg = ("--gauss_keywords was provided, but --output_com was not specified. "
+        warn_msg = ("--gauss_keywords was provided, but --gauss_files was not specified. "
                     "The keywords file will be ignored as no .com files are being generated.")
         print(f"WARNING: {warn_msg}")
         write_to_log(warn_msg, is_warning=True)
@@ -779,15 +750,13 @@ Other:
 
     base_output_dir: str = os.getcwd() 
 
-    processed_frames_list: List[Tuple[Optional[str], str, str]] = split_frames(args.single_xyz, args.traj_xyz, args.nFrames, base_output_dir)
+    processed_frames_list: List[Tuple[str, str, str]] = split_frames(args.traj, args.nFrames, base_output_dir)
     total_frames_to_process = len(processed_frames_list)
     
     if total_frames_to_process == 0: # This implies an issue with split_frames or input files
         err_msg = f"No frames were found or could be processed from the input XYZ source."
-        if args.traj_xyz:
-             err_msg = f"No frames were found or could be processed from trajectory: {args.traj_xyz}"
-        elif args.single_xyz:
-             err_msg = f"Could not process single XYZ file: {args.single_xyz}"
+        if args.traj:
+             err_msg = f"No frames were found or could be processed from trajectory: {args.traj}"
         print(f"ERROR: {err_msg}", file=sys.stderr)
         write_to_log(err_msg, is_error=True)
         sys.exit(1)
@@ -819,15 +788,15 @@ Other:
     tag_for_filename = f"_{args.tag}" if args.tag else "" 
 
 
-    if args.traj_xyz and total_frames_to_process > 0 :
+    if args.traj and total_frames_to_process > 0 :
         sys.stdout.write(f"\nProcessed Frames: 0 / {total_frames_to_process}\n") # Ensure this prints on a new line
         sys.stdout.flush()
 
     # --- Determine what types of files to generate based on user's explicit choices ---
     # .com file generation flags
-    # If args.output_com is None (flag not given), these will be False.
-    actual_gen_monomer_com: bool = (user_intends_com_output and args.output_com in ['monomer', 'both'])
-    actual_gen_aggregate_com: bool = (user_intends_com_output and args.output_com in ['dimer', 'both'])
+    # If args.gauss_files is None (flag not given), these will be False.
+    actual_gen_monomer_com: bool = (user_intends_com_output and args.gauss_files in ['monomer', 'both'])
+    actual_gen_aggregate_com: bool = (user_intends_com_output and args.gauss_files in ['dimer', 'both'])
 
     # .xyz output is always generated
     actual_gen_monomer_xyz: bool = True
@@ -836,7 +805,7 @@ Other:
 
     for frame_idx, (frame_id_str, temp_xyz_input_filepath, current_frame_output_dir) in enumerate(processed_frames_list):
         # Progress indicator for trajectory processing
-        if args.traj_xyz and total_frames_to_process > 0 :
+        if args.traj and total_frames_to_process > 0 :
             # For the first frame (idx 0), the "Processed Frames: 0 / N" is already printed.
             # For subsequent frames, update the line.
             if frame_idx > 0 :
@@ -851,7 +820,7 @@ Other:
         write_to_log(f"\n\n{frame_processing_message}")
         
         # The progress update that gets overwritten
-        if args.traj_xyz and total_frames_to_process > 0:
+        if args.traj and total_frames_to_process > 0:
             sys.stdout.write(f"Progress: Frame {frame_idx + 1}/{total_frames_to_process}")
             sys.stdout.flush()
 
@@ -876,7 +845,7 @@ Other:
             err_msg = f"Error during solvent localization/region preparation for frame {frame_id_str if frame_id_str else 'single'}: {e}"
             print(f"\nERROR: {err_msg}", file=sys.stderr) # Newline if progress bar was on previous line
             write_to_log(err_msg, is_error=True)
-            if args.traj_xyz:
+            if args.traj:
                 write_to_log(f"Skipping frame {frame_id_str} due to error.", is_warning=True)
                 # No need to rewrite progress here, loop will continue or end.
                 continue 
@@ -1237,7 +1206,7 @@ Other:
                 )
 
         # Cleanup temporary XYZ for this frame
-        if args.traj_xyz and os.path.exists(temp_xyz_input_filepath) and TEMP_FRAME_XYZ_FILENAME in temp_xyz_input_filepath :
+        if args.traj and os.path.exists(temp_xyz_input_filepath) and TEMP_FRAME_XYZ_FILENAME in temp_xyz_input_filepath :
             try:
                 os.remove(temp_xyz_input_filepath)
                 write_to_log(f"Cleaned up temporary file: {temp_xyz_input_filepath}")
@@ -1247,15 +1216,15 @@ Other:
                 write_to_log(warn_msg, is_warning=True)
         
         # Update progress indicator for the next iteration or completion
-        if args.traj_xyz and total_frames_to_process > 0 and frame_idx == total_frames_to_process -1 :
+        if args.traj and total_frames_to_process > 0 and frame_idx == total_frames_to_process -1 :
              sys.stdout.write(f"\rProgress: Frame {frame_idx + 1}/{total_frames_to_process} - Complete. \n")
              sys.stdout.flush()
-        elif args.traj_xyz and total_frames_to_process > 0 : # For intermediate frames
+        elif args.traj and total_frames_to_process > 0 : # For intermediate frames
             pass # The next loop iteration will print "Processing Frame X / Y" on a new line.
                  # And then overwrite the "Progress: Frame X/Y" line.
 
     # Final newline if processing a trajectory to move past the progress line.
-    if args.traj_xyz and total_frames_to_process > 0:
+    if args.traj and total_frames_to_process > 0:
         sys.stdout.write("\n") 
         sys.stdout.flush()
 
