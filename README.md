@@ -89,7 +89,7 @@ This is single entry script to generate :
   - Name for detailed log file (default `run.log`)
 ## Quick Start
 
-Run `python giqpy.py --traj examples/cv_dimer_water.json --nDyes 2 --system_info examples/cv_dimer_water.json --gauss_files monomer --gauss_keywords examples/keywords.txt` to generate example inputs.
+Run `python giqpy.py --traj my_traj.xyz --nFrames 1 --nDyes 2 --system_info examples/cv_dimer_water.json --gauss_files monomer --gauss_keywords examples/keywords.txt` to generate example inputs.
 
 ---
 
