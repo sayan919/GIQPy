@@ -158,7 +158,7 @@ entry describing the solvent.
   …
   ```
 
-  Provide **N** such files when `--aggregate N` so every monomer can be embedded
+  Provide **N** such files when `--nDyes N` so every monomer can be embedded
   in the charges of all other monomers.
 
 - ### (b) Explicit MM solvent (`--mm_solvent`)

@@ -166,8 +166,7 @@ def split_frames(
     
     return processed_frames_info
 
-# ... (rest of the functions like load_system_info, parse_formula, etc., are unchanged) ...
-def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+def load_system_info(system_info_path: str, n_dyes: int) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Load monomer and solvent metadata from a single JSON array file.
     Performs validation on the structure and content of the JSON.
@@ -187,14 +186,14 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
         if log_file_handle: write_to_log(err_msg, is_error=True)
         raise ValueError(err_msg)
 
-    if not isinstance(data, list) or len(data) < aggregate + 1:
-        msg = f"system_info must be a JSON array with at least {aggregate + 1} entries ({aggregate} monomers + 1 solvent)."
+    if not isinstance(data, list) or len(data) < n_dyes + 1:
+        msg = f"system_info must be a JSON array with at least {n_dyes + 1} entries ({n_dyes} monomers + 1 solvent)."
         print(f"ERROR: {msg}", file=sys.stderr)
         if log_file_handle: write_to_log(msg, is_error=True)
         raise ValueError(msg)
     
-    monomers_data: List[Dict[str, Any]] = data[:aggregate]
-    solvent_data: Dict[str, Any] = data[aggregate] 
+    monomers_data: List[Dict[str, Any]] = data[:n_dyes]
+    solvent_data: Dict[str, Any] = data[n_dyes]
 
     # Validate monomers
     for i, monomer in enumerate(monomers_data):
@@ -376,14 +375,14 @@ def write_xyz(path: str, atoms: Union[AtomListType, ChargeListType], coords: Coo
 def localize_solvent_and_prepare_regions(
     main_xyz_input_filepath: str,
     system_info_path: str,
-    aggregate: int,
-    qm_radius: float
+    n_dyes: int,
+    qm_radius: float,
 ) -> Tuple[List[Tuple[AtomListType, CoordType]], Tuple[AtomListType, CoordType], List[SolventGroupType], Dict[str, bool], CoordType, List[int]]:
     """
     Processes input XYZ to define QM regions for monomers and aggregate.
     Solvent is always taken from main_xyz_input_filepath.
     """
-    monomers_meta, solvent_meta = load_system_info(system_info_path, aggregate)
+    monomers_meta, solvent_meta = load_system_info(system_info_path, n_dyes)
     n_atoms_per_monomer_list: List[int] = [m[JSON_KEY_NATOMS] for m in monomers_meta]
     total_core_atom_count_from_json = sum(n_atoms_per_monomer_list)
     
@@ -775,9 +774,11 @@ Other:
 
 
     if len(monomers_metadata_list) != args.nDyes:
-        # This check might be redundant if load_system_info already validates based on aggregate count
-        msg = (f"Number of monomer entries in system_info ({len(monomers_metadata_list)}) "
-               f"does not match --aggregate ({args.nDyes}).")
+        # This check might be redundant if load_system_info already validates based on n_dyes count
+        msg = (
+            f"Number of monomer entries in system_info ({len(monomers_metadata_list)}) "
+            f"does not match --nDyes ({args.nDyes})."
+        )
         print(f"ERROR: {msg}", file=sys.stderr)
         write_to_log(msg, is_error=True)
         # raise ValueError(msg) # Or sys.exit(1)
@@ -945,7 +946,10 @@ Other:
                     current_atom_idx += num_atoms_in_mono
                 
                 if args.nDyes == 1:
-                    write_to_log("Note: --mm_monomer 0 specified with --aggregate=1. No other monomers to embed with zero charges.", is_warning=True)
+                    write_to_log(
+                        "Note: --mm_monomer 0 specified with --nDyes=1. No other monomers to embed with zero charges.",
+                        is_warning=True,
+                    )
                 else: 
                     for i in range(args.nDyes): 
                         embedding_charges_for_monomer_i: List[MMChargeTupleType] = []
@@ -961,7 +965,7 @@ Other:
                     all_monomer_explicit_charges_xyz_q = [load_monomer_charges_from_file(f) for f in args.mm_monomer]
                     
                     if args.nDyes == 1:
-                         warn_msg = ("--mm_monomer provided with 1 file for --aggregate=1. "
+                         warn_msg = ("--mm_monomer provided with 1 file for --nDyes=1. "
                                      "This charge file will be loaded but not used for inter-monomer embedding as there are no 'other' monomers.")
                          print(f"\nWARNING: {warn_msg}") # Ensure newline
                          write_to_log(warn_msg, is_warning=True)
@@ -972,9 +976,10 @@ Other:
                                 if i == j: continue 
                                 combined_embedding_charges_for_i.extend(all_monomer_explicit_charges_xyz_q[j])
                             mm_embedding_charges_for_each_monomer[i] = combined_embedding_charges_for_i
-                else: 
-                    warn_msg = (f"--mm_monomer was given {len(args.mm_monomer)} charge file(s), "
-                                f"but --aggregate is {args.nDyes}. Expected {args.nDyes} file(s) "
+                else:
+                    warn_msg = (
+                        f"--mm_monomer was given {len(args.mm_monomer)} charge file(s), "
+                        f"but --nDyes is {args.nDyes}. Expected {args.nDyes} file(s) "
                                 f"for this mode of MM monomer embedding. MM monomer embedding charges will be skipped.")
                     print(f"\nWARNING: {warn_msg}") # Ensure newline
                     write_to_log(warn_msg, is_warning=True)
