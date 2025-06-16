@@ -1,6 +1,6 @@
 #!/bin/bash
 #=================================================================================================
-# Sayan Adhikari | May 25, 2025 | https://github.com/sayan919
+# Sayan Adhikari | June 25, 2025 | https://github.com/sayan919
 #=================================================================================================
 # Usage: bash extract_snapshots.sh <input_traj>
 # 
@@ -31,7 +31,7 @@ system_json='path_to_system_json'
 traj=$1
 keywords='path_to_keywords'
 
-python $main_script \
+python3 $main_script \
     --traj_xyz $traj \
     --frames 20 \
     --aggregate 2 \
