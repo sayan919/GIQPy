@@ -613,39 +613,8 @@ def main() -> None:
 
 
     parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter, 
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter, 
         description="Generate Gaussian .com and .xyz files from single or trajectory XYZ with QM/MM options.",
-        epilog="""
--------------------------------------------------------------------------------
-Core Flags:
-  --traj <file.xyz>             : Multi-frame trajectory XYZ file.
-  --nFrames <N>                 : Number of frames to process (default: all).
-  --nDyes <M>                    : Number of core monomer units (e.g., 2 for a dimer). Required.
-  --system_info <file.json>     : Single JSON defining all monomers and solvent properties. Required.
-  
-Output Control:
-  --gauss_files [monomer|dimer|both] : Generate Gaussian .com input files.
-                                      If flag is present without a value, defaults to "both".
-                                      Requires --gauss_keywords.
-  --gauss_keywords <file.txt>   : Text file with Gaussian route section keywords.
-                                    Required if --gauss_files is specified.
-QM/MM Setup:
-  --qmSol_radius <radius>         : Defines QM solvent shell by radius (Å) around core atoms (default: 5.0).
-  --mm_solvent [file.xyz]       : Optional. Defines MM solvent.
-                                  - If path provided: XYZ-like file (charge x y z per line, skips 2 headers).
-                                  - If flag used alone (i.e., --mm_solvent with no file path):
-                                    Auto-detects non-QM solvent from input XYZ and uses charges from system_info.json.
-  --mm_monomer [0|file1 ...]    : Optional. Defines MM charges for embedding from other monomers.
-                                  - '0': Embeds other monomers with zero charges at their atomic positions.
-                                  - File(s) provided: File(s) with "charge x y z" for MM charges.
-                                    Provide one file per monomer in the aggregate if this mode is used.
-  --eetg                        : Flag to generate only EETG input for dimers (requires --nDyes=2 and --gauss_files).
-  
-Other:
-  --tag <TAG_STRING>            : Optional custom tag for generated .com filenames (e.g., ..._TAG.com).
-  --logfile <filename>          : Specify log file name (default: giqpy_run.log).
--------------------------------------------------------------------------------
-        """
     )
     parser.add_argument('--traj', type=str, required=True,
                         help='Multi-frame trajectory XYZ file. Use --nFrames 1 for a single frame.')
@@ -992,7 +961,6 @@ Other:
         if actual_gen_aggregate_xyz:
             agg_qm_atoms_xyz, agg_qm_coords_xyz = aggregate_qm_region
             qm_sol_desc_agg = f" + qm {solvent_name_str}" if qm_solvent_flags.get('aggregate_has_added_qm_solvent') else ""
-            # Original comment from user's script version
             xyz_comment_for_aggregate_qm = f"{aggregate_xyz_comment_base} qm{qm_sol_desc_agg}"  # Corrected: was 'qm {qm_sol_desc_agg}'
             write_xyz(
                 os.path.join(current_frame_output_dir, f'{combined_system_term}_qm.xyz'),
@@ -1006,13 +974,11 @@ Other:
                     monomer_name_from_meta = monomers_metadata_list[i].get(JSON_KEY_NAME, f'm{i+1}')
                     mono_has_qm_sol = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
                     qm_sol_desc_mono = f" + its unique qm {solvent_name_str}" if mono_has_qm_sol else ""
-                    # Original comment from user's script version
                     xyz_comment_for_monomer_qm = f"{monomer_name_from_meta} monomer{i+1} qm{qm_sol_desc_mono}" # Corrected: was 'qm {qm_sol_desc_mono}'
                     write_xyz(os.path.join(current_frame_output_dir, f'monomer{i+1}_qm.xyz'),
                               mono_qm_atoms_xyz, mono_qm_coords_xyz,
                               comment=xyz_comment_for_monomer_qm)
 
-            # MM Charges XYZ files (NEW LOGIC HERE, filenames and comments UNCHANGED)
             # For {combined_system_term}_mm.xyz
             if actual_gen_aggregate_xyz:
                 aggregate_mm_charges_list_for_xyz: List[MMChargeTupleType] = []
@@ -1023,11 +989,9 @@ Other:
                     charges_col = [q_val for x,y,z,q_val in aggregate_mm_charges_list_for_xyz]
                     coords_arr = np.array([(x,y,z) for x,y,z,q_val in aggregate_mm_charges_list_for_xyz])
                     
-                    # Original filename and comment from user's script version
                     mm_solvent_agg_comment = f"mm {solvent_name_str} for {base_system_name_for_title} {combined_system_term}"
                     output_path = os.path.join(current_frame_output_dir, f'{combined_system_term}_mm.xyz')
                     write_xyz(output_path, charges_col, coords_arr, comment=mm_solvent_agg_comment)
-                    write_to_log(f"Written MM charges XYZ for aggregate to: {output_path} (contains MM solvent charges if any)")
                 elif args.mm_solvent : 
                      warn_msg = (f"MM solvent was specified (--mm_solvent) but no point charges were loaded/generated for it. "
                                  f"File '{combined_system_term}_mm.xyz' will not contain MM solvent charges.")
@@ -1050,10 +1014,7 @@ Other:
                     if system_has_mm_solvent and mm_solvent_point_charges_xyz_q:
                         monomer_combined_mm_charges_for_xyz.extend(mm_solvent_point_charges_xyz_q)
 
-                    if monomer_combined_mm_charges_for_xyz: # If there are any charges to write
-                        charges_col = [q_val for x,y,z,q_val in monomer_combined_mm_charges_for_xyz]
                         coords_arr = np.array([(x,y,z) for x,y,z,q_val in monomer_combined_mm_charges_for_xyz])
-                        # Original filename and comment from user's script version
                         # mm_solvent_mono_comment = f"mm {solvent_name_str} for {monomer_name_from_meta} monomer{i+1}"
                         other_monomer_mm_charges_present = bool(mm_embedding_charges_for_each_monomer[i])
                         if other_monomer_mm_charges_present:
@@ -1256,7 +1217,7 @@ if __name__ == '__main__':
         print(f"ERROR: {err_msg_critical}", file=sys.stderr)
         if log_file_handle and not log_file_handle.closed:
             write_to_log(err_msg_critical, is_error=True)
-            import traceback # Moved import here
+            import traceback
             traceback.print_exc(file=log_file_handle) 
         sys.exit(1)
     except Exception as e: 
@@ -1264,7 +1225,7 @@ if __name__ == '__main__':
         print(f"ERROR: {err_msg_critical}", file=sys.stderr)
         if log_file_handle and not log_file_handle.closed: 
             write_to_log(err_msg_critical, is_error=True)
-            import traceback # Moved import here
+            import traceback
             write_to_log(traceback.format_exc()) 
         sys.exit(1)
     finally:
