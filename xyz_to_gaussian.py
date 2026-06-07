@@ -6,10 +6,10 @@
 Convert GIQPy XYZ output into Gaussian .com input files.
 
 Reads the per-frame XYZ files produced by giqpy.py:
-    {term}_qm.xyz, monomer{i}_qm.xyz   : QM geometries
-    {term}_mm.xyz, monomer{i}_mm.xyz   : MM point charges ("charge x y z")
+    {term}_qm.xyz, {system}_qm.xyz   : QM geometries
+    {term}_mm.xyz, {system}_mm.xyz   : MM point charges ("charge x y z")
 and writes the corresponding Gaussian .com files. ({term} is "dimer" for --nDyes 2,
-otherwise "aggregate".)
+otherwise "aggregate"; {system} is the per-monomer label from the JSON "system" key.)
 
 Flags:
     --indir         (Optional) : Directory holding the XYZ files, or a parent containing numbered
@@ -36,11 +36,10 @@ def find_frame_dirs(indir: str, term: str) -> List[str]:
     Return the directories to process. If ``indir`` contains numbered subdirectories with QM files,
     return those (numerically sorted); otherwise process ``indir`` itself.
     """
-    marker = f"{term}_qm.xyz"
-    monomer_marker = "monomer1_qm.xyz"
+    marker = f"{term}_qm.xyz"  # giqpy always writes the aggregate QM file
 
     def has_xyz(d: str) -> bool:
-        return os.path.exists(os.path.join(d, marker)) or os.path.exists(os.path.join(d, monomer_marker))
+        return os.path.exists(os.path.join(d, marker))
 
     numbered = []
     try:
@@ -93,8 +92,9 @@ def generate_for_dir(
     tag_suffix: str,
 ) -> None:
     """Generate the requested .com files for a single frame directory."""
-    n_atoms_per_monomer = [m[fn.JSON_KEY_NATOMS] for m in monomers_meta]
+    n_atoms_per_monomer = fn.monomer_atom_counts(monomers_meta)
     monomer_names = [m.get(fn.JSON_KEY_NAME, f'Monomer {i + 1}') for i, m in enumerate(monomers_meta)]
+    monomer_labels = fn.system_labels(monomers_meta)  # output names from the JSON 'system' key
     base_system_name = monomer_names[0] if len(set(monomer_names)) == 1 else "_".join(monomer_names)
 
     total_charge = sum(m[fn.JSON_KEY_CHARGE] for m in monomers_meta)
@@ -114,8 +114,8 @@ def generate_for_dir(
         if n_dyes != 2:
             fn.write_to_log("EETG requires --nDyes 2; skipping EETG.", is_warning=True)
         elif gen_aggregate:
-            m1_path = os.path.join(out_dir, "monomer1_qm.xyz")
-            m2_path = os.path.join(out_dir, "monomer2_qm.xyz")
+            m1_path = os.path.join(out_dir, f"{monomer_labels[0]}_qm.xyz")
+            m2_path = os.path.join(out_dir, f"{monomer_labels[1]}_qm.xyz")
             if not (os.path.exists(m1_path) and os.path.exists(m2_path)):
                 fn.write_to_log("EETG: monomer QM files missing; skipping EETG.", is_warning=True)
             else:
@@ -139,22 +139,23 @@ def generate_for_dir(
     # --- Monomer inputs ---
     if gen_monomer:
         for i in range(n_dyes):
-            qm_path = os.path.join(out_dir, f"monomer{i + 1}_qm.xyz")
+            label = monomer_labels[i]
+            qm_path = os.path.join(out_dir, f"{label}_qm.xyz")
             if not os.path.exists(qm_path):
-                fn.write_to_log(f"monomer{i + 1}_qm.xyz not found in {out_dir}; skipping.", is_warning=True)
+                fn.write_to_log(f"{label}_qm.xyz not found in {out_dir}; skipping.", is_warning=True)
                 continue
             atoms, coords, _ = fn.read_xyz(qm_path)
             has_qm_sol = len(atoms) > n_atoms_per_monomer[i]
-            mm_charges = load_mm(os.path.join(out_dir, f"monomer{i + 1}_mm.xyz"))
+            mm_charges = load_mm(os.path.join(out_dir, f"{label}_mm.xyz"))
             suffix = fn.get_solvent_descriptor_suffix(has_qm_sol, system_has_mm_solvent)
-            title = f"{monomer_names[i]} monomer {i + 1}{fn.get_solvent_title_fragment(has_qm_sol, system_has_mm_solvent, solvent_name)}".strip()
+            title = f"{monomer_names[i]} {label}{fn.get_solvent_title_fragment(has_qm_sol, system_has_mm_solvent, solvent_name)}".strip()
             fn.write_com_file(
-                os.path.join(out_dir, f"monomer{i + 1}{suffix}{tag_suffix}.com"),
+                os.path.join(out_dir, f"{label}{suffix}{tag_suffix}.com"),
                 keywords, title,
                 monomers_meta[i][fn.JSON_KEY_CHARGE], monomers_meta[i][fn.JSON_KEY_SPIN_MULT],
                 atoms, coords, mm_charges_list=mm_charges,
             )
-            fn.write_to_log(f"Wrote monomer{i + 1}.com in {out_dir}.")
+            fn.write_to_log(f"Wrote {label}.com in {out_dir}.")
 
     # --- Aggregate input ---
     if gen_aggregate:

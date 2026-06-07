@@ -10,10 +10,11 @@ run xyz_to_gaussian.py afterwards (see run_giqpy.sh).
 
 Per frame it writes (into the frame's output directory):
     {term}_qm.xyz        : aggregate QM region   (core + all QM solvent)
-    monomer{i}_qm.xyz    : monomer QM region     (core_i + its UNIQUE QM solvent)
+    {system}_qm.xyz      : monomer QM region     (core + its UNIQUE QM solvent)
     {term}_mm.xyz        : aggregate MM charges  (MM solvent only)            [if MM requested]
-    monomer{i}_mm.xyz    : monomer MM charges    (other-monomer embedding + MM solvent) [if requested]
-where {term} is "dimer" for --nDyes 2 and "aggregate" otherwise.
+    {system}_mm.xyz      : monomer MM charges    (other-monomer embedding + MM solvent) [if requested]
+where {term} is "dimer" for --nDyes 2 and "aggregate" otherwise, and {system} is the per-monomer
+label from the JSON "system" key (e.g. m1, m2).
 
 Flags:
     --traj          (Required) : Multi-frame trajectory XYZ file (use --nFrames 1 for a single frame).
@@ -191,6 +192,7 @@ def main() -> None:
         sys.exit(1)
 
     monomer_names = [m.get(fn.JSON_KEY_NAME, f'm{i + 1}') for i, m in enumerate(monomers_meta)]
+    monomer_labels = fn.system_labels(monomers_meta)  # output names from the JSON 'system' key
     if len(set(monomer_names)) == 1:
         base_system_name = monomer_names[0]
     else:
@@ -232,9 +234,9 @@ def main() -> None:
         for i, (mono_atoms, mono_coords) in enumerate(monomer_qm_regions):
             has_qm_sol = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
             qm_sol_desc = f" + its unique qm {solvent_name}" if has_qm_sol else ""
-            fn.write_xyz(os.path.join(out_dir, f'monomer{i + 1}_qm.xyz'),
+            fn.write_xyz(os.path.join(out_dir, f'{monomer_labels[i]}_qm.xyz'),
                          mono_atoms, mono_coords,
-                         comment=f"{monomer_names[i]} monomer{i + 1} qm{qm_sol_desc}")
+                         comment=f"{monomer_names[i]} {monomer_labels[i]} qm{qm_sol_desc}")
 
         # --- MM charge XYZ files ---
         # Aggregate: MM solvent only.
@@ -253,13 +255,13 @@ def main() -> None:
             if combined:
                 has_embedding = bool(mm_embedding[i])
                 if has_embedding:
-                    comment = f"mm monomer + mm {solvent_name} for {monomer_names[i]} monomer{i + 1}"
+                    comment = f"mm monomer + mm {solvent_name} for {monomer_names[i]} {monomer_labels[i]}"
                 else:
-                    comment = f"mm {solvent_name} for {monomer_names[i]} monomer{i + 1}"
-                write_mm_xyz(os.path.join(out_dir, f'monomer{i + 1}_mm.xyz'), combined, comment=comment)
-                fn.write_to_log(f"Wrote monomer {i + 1} MM charges ({len(combined)} point charges).")
+                    comment = f"mm {solvent_name} for {monomer_names[i]} {monomer_labels[i]}"
+                write_mm_xyz(os.path.join(out_dir, f'{monomer_labels[i]}_mm.xyz'), combined, comment=comment)
+                fn.write_to_log(f"Wrote {monomer_labels[i]} MM charges ({len(combined)} point charges).")
             elif args.mm_monomer or args.mm_solvent:
-                warn = f"No MM charges to write for monomer{i + 1}; 'monomer{i + 1}_mm.xyz' skipped."
+                warn = f"No MM charges to write for {monomer_labels[i]}; '{monomer_labels[i]}_mm.xyz' skipped."
                 fn.write_to_log(warn, is_warning=True)
 
         # Cleanup temporary per-frame XYZ.

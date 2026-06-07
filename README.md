@@ -3,8 +3,7 @@
 The workflow is split into two scripts:
 
 1. **`giqpy.py`** — turns a trajectory (or single frame) into **.xyz** files: one QM-region file
-   and one MM point-charge file per monomer and for the aggregate. These `.xyz` files can be used
-   directly with `TeraChem` (paired with an `.in` keywords file).
+   and one MM point-charge file per monomer and for the aggregate. 
 2. **`xyz_to_gaussian.py`** — converts those `.xyz` files into `Gaussian` **.com** input files
    (per monomer, the aggregate/dimer, or an EET-analysis dimer) with a given set of keywords.
 
@@ -151,18 +150,20 @@ entry describing the solvent.
   ```jsonc
   [
     {
-      "system"      : "monomer1",
-      "name"        : "cv",
+      "system"      : "m1",            // label used to NAME this system's output files
+      "name"        : "cv",            // descriptive name shown in titles/comments
       "mol_formula" : "C16H12N3O1",
       "nAtoms"      : 32,
+      "index"       : "0-31",          // 0-based atom indices for this monomer in the trajectory
       "charge"      : 1,
       "spin_mult"   : 1
     },
     {
-      "system"      : "monomer2",
+      "system"      : "m2",
       "name"        : "cv",
       "mol_formula" : "C16H12N3O1",
       "nAtoms"      : 32,
+      "index"       : "32-63",
       "charge"      : 1,
       "spin_mult"   : 1
     },
@@ -170,7 +171,8 @@ entry describing the solvent.
       "system"      : "solvent",
       "name"        : "water",
       "mol_formula" : "H2O",
-      "nAtoms"      : 3,
+      "nAtoms"      : 3,               // atoms per solvent MOLECULE (for grouping)
+      "index"       : "64-",           // start at atom 64, take all remaining as solvent
       "charges": 
       [
         { "element": "O", "charge": -0.834 },
@@ -180,6 +182,21 @@ entry describing the solvent.
     }
   ]
   ```
+
+- **`system`** — the short label used to **name the output files** for that monomer
+  (e.g. `m1_qm.xyz`, `m1.com`). Call them `m1`/`m2`, `mA`/`mB`, or anything you like.
+  If omitted, the code falls back to `monomer1`, `monomer2`, …
+- **`name`** — descriptive name that appears in `.xyz`/`.com` titles and comments (not filenames).
+- **`index`** — 0-based atom index spec selecting that system's atoms from each trajectory frame:
+  - `"0-31"` → atoms 0 through 31 (inclusive)
+  - `"64-"`  → atom 64 through the end (use for the solvent)
+  - `"0-9,20-31"` → multiple ranges (atoms need **not** be contiguous)
+  - With `index`, the trajectory atom order is flexible (cores need not come first).
+  - `index` ranges must not overlap between systems; out-of-range/overlapping indices raise an error.
+- **`nAtoms`** — for a monomer it is the atom count (optional when `index` is given; if both are
+  present they are cross-checked). For the **solvent** it is atoms-per-molecule and is always required.
+- **Legacy mode:** if no monomer has an `index`, atoms are taken sequentially by `nAtoms`
+  (`[monomer1 … monomerN][solvent …]`), exactly as before.
 
 ---
 
@@ -206,11 +223,12 @@ entry describing the solvent.
 
 ## Outputs
 - **`giqpy.py`** (always, per frame; `{term}` is `dimer` for `--nDyes 2`, else `aggregate`):
-  - `{term}_qm.xyz`, `monomer{i}_qm.xyz` : QM-region geometries (core + QM solvent).
-  - `{term}_mm.xyz`, `monomer{i}_mm.xyz` : MM point charges (`charge x y z`), only when MM is requested.
+  - `{term}_qm.xyz`, `{system}_qm.xyz` : QM-region geometries (core + QM solvent).
+  - `{term}_mm.xyz`, `{system}_mm.xyz` : MM point charges (`charge x y z`), only when MM is requested.
     The aggregate MM file holds MM solvent only; monomer MM files also include other-monomer embedding.
+    (`{system}` is the per-monomer label from the JSON `system` key, e.g. `m1`, `m2`.)
 - **`xyz_to_gaussian.py`** (from the XYZ files above):
-  - monomer `.com` files: `monomer1.com`, `monomer2.com`, … (suffix `_qm`/`_mm`/`_qm_mm` reflects solvent).
+  - monomer `.com` files named by the `system` label: `m1.com`, `m2.com`, … (suffix `_qm`/`_mm`/`_qm_mm` reflects solvent).
   - aggregate/dimer `.com` file.
   - EETG `.com` for dimers when `--eetg` is specified.
 
@@ -229,4 +247,4 @@ Fatal errors return a non‑zero exit status.
 
 ### Acknowledgements
 
-Developed with ♥ by *Sayan Adhikari*, *Gemini* and *ChatGPT*
+Developed with ♥ by *Sayan Adhikari* and *Claude*

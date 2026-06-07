@@ -12,8 +12,10 @@ AUTO_MM_SOLVENT_TRIGGER: str = "auto_detect_mm_solvent_from_input_xyz"
 TEMP_FRAME_XYZ_FILENAME: str = "_current_frame_data.xyz"
 
 # --- JSON Keys Constants ---
+JSON_KEY_SYSTEM: str = "system"        # short label used to name a system's output files (e.g. "m1", "mA")
 JSON_KEY_NAME: str = "name"
 JSON_KEY_NATOMS: str = "nAtoms"
+JSON_KEY_INDEX: str = "index"          # 0-based atom index spec into the trajectory (e.g. "0-31", "64-")
 JSON_KEY_CHARGE: str = "charge"
 JSON_KEY_SPIN_MULT: str = "spin_mult"
 JSON_KEY_MOL_FORMULA: str = "mol_formula"
@@ -125,6 +127,99 @@ def split_frames(
     return processed_frames_info
 
 
+def parse_index_spec(spec: Union[str, int], total_atoms: Optional[int] = None) -> List[int]:
+    """
+    Parse a 0-based atom index specification into an explicit list of indices.
+
+    Accepted forms (comma-separated tokens allowed):
+        5        -> [5]
+        "0-31"   -> [0, 1, ..., 31]                  (inclusive range)
+        "64-"    -> [64, 65, ..., total_atoms - 1]   (open-ended; needs total_atoms)
+        "0-9,20" -> [0, ..., 9, 20]                  (multiple tokens)
+    """
+    indices: List[int] = []
+    for raw in str(spec).split(','):
+        token = raw.strip()
+        if not token:
+            continue
+        if '-' in token:
+            start_str, end_str = token.split('-', 1)
+            start = int(start_str)
+            if end_str.strip() == '':
+                if total_atoms is None:
+                    raise ValueError(f"Open-ended index '{token}' needs a known total atom count.")
+                end = total_atoms - 1
+            else:
+                end = int(end_str)
+            if end < start:
+                raise ValueError(f"Invalid index range '{token}': end < start.")
+            indices.extend(range(start, end + 1))
+        else:
+            indices.append(int(token))
+    return indices
+
+
+def system_labels(monomers_meta: List[Dict[str, Any]]) -> List[str]:
+    """Per-monomer output label from the JSON 'system' key (fallback: monomer1, monomer2, ...)."""
+    return [m.get(JSON_KEY_SYSTEM, f"monomer{i + 1}") for i, m in enumerate(monomers_meta)]
+
+
+def monomer_atom_counts(monomers_meta: List[Dict[str, Any]]) -> List[int]:
+    """
+    Number of core atoms per monomer, taken from each entry's bounded 'index' spec
+    if present, otherwise from 'nAtoms'. (Does not need the trajectory.)
+    """
+    counts: List[int] = []
+    for m in monomers_meta:
+        if JSON_KEY_INDEX in m:
+            counts.append(len(parse_index_spec(m[JSON_KEY_INDEX])))
+        else:
+            counts.append(m[JSON_KEY_NATOMS])
+    return counts
+
+
+def resolve_system_indices(
+    monomers_meta: List[Dict[str, Any]],
+    solvent_meta: Dict[str, Any],
+    total_atoms: int,
+) -> Tuple[List[List[int]], List[int]]:
+    """
+    Determine which trajectory atoms belong to each monomer and to the solvent.
+
+    If every monomer entry has an 'index' field, atoms come from those specs
+    (and the solvent from its own 'index', or from whatever atoms are left over).
+    Otherwise atoms are taken sequentially using each entry's 'nAtoms' count
+    (legacy contract: [monomer1 ... monomerN][solvent ...]).
+    """
+    if all(JSON_KEY_INDEX in m for m in monomers_meta):
+        monomer_indices = [parse_index_spec(m[JSON_KEY_INDEX], total_atoms) for m in monomers_meta]
+        if JSON_KEY_INDEX in solvent_meta:
+            solvent_indices = parse_index_spec(solvent_meta[JSON_KEY_INDEX], total_atoms)
+        else:
+            assigned = set().union(*monomer_indices) if monomer_indices else set()
+            solvent_indices = [i for i in range(total_atoms) if i not in assigned]
+    else:
+        monomer_indices = []
+        cursor = 0
+        for m in monomers_meta:
+            n = m[JSON_KEY_NATOMS]
+            monomer_indices.append(list(range(cursor, cursor + n)))
+            cursor += n
+        solvent_indices = list(range(cursor, total_atoms))
+
+    # Bounds + overlap validation across all systems.
+    labels = system_labels(monomers_meta) + ["solvent"]
+    seen: Dict[int, str] = {}
+    for label, ixs in zip(labels, monomer_indices + [solvent_indices]):
+        for i in ixs:
+            if i < 0 or i >= total_atoms:
+                raise ValueError(f"Atom index {i} for '{label}' is out of range (trajectory has {total_atoms} atoms).")
+            if i in seen:
+                raise ValueError(f"Atom index {i} is assigned to both '{seen[i]}' and '{label}'.")
+            seen[i] = label
+    return monomer_indices, solvent_indices
+
+
 def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Load monomer and solvent metadata from a single JSON array file.
@@ -162,7 +257,6 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
 
         required_keys_monomer: Dict[str, Any] = {
             JSON_KEY_NAME: str,
-            JSON_KEY_NATOMS: int,
             JSON_KEY_CHARGE: (int, float),
             JSON_KEY_SPIN_MULT: int,
         }
@@ -173,8 +267,27 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
                 raise ValueError(f"Monomer '{monomer_id_for_log}' key '{key}' has incorrect type. "
                                  f"Expected {expected_type}, got {type(monomer[key])}.")
 
-        if monomer[JSON_KEY_NATOMS] <= 0:
-            raise ValueError(f"Monomer '{monomer_id_for_log}' key '{JSON_KEY_NATOMS}' must be a positive integer.")
+        # Atom selection: either an explicit 'index' spec, or a sequential 'nAtoms' count (legacy).
+        if JSON_KEY_INDEX in monomer:
+            if not isinstance(monomer[JSON_KEY_INDEX], (str, int)):
+                raise ValueError(f"Monomer '{monomer_id_for_log}' key '{JSON_KEY_INDEX}' must be a string like \"0-31\".")
+            try:
+                count = len(parse_index_spec(monomer[JSON_KEY_INDEX]))  # bounded spec -> no total needed
+            except ValueError as e:
+                raise ValueError(f"Monomer '{monomer_id_for_log}' has an invalid '{JSON_KEY_INDEX}': {e}")
+            if count == 0:
+                raise ValueError(f"Monomer '{monomer_id_for_log}' key '{JSON_KEY_INDEX}' selects zero atoms.")
+            if JSON_KEY_NATOMS in monomer and monomer[JSON_KEY_NATOMS] != count:
+                warn_msg = (f"Monomer '{monomer_id_for_log}': '{JSON_KEY_NATOMS}' ({monomer[JSON_KEY_NATOMS]}) "
+                            f"does not match the {count} atoms selected by '{JSON_KEY_INDEX}'. Using '{JSON_KEY_INDEX}'.")
+                print(f"WARNING: {warn_msg}")
+                write_to_log(warn_msg, is_warning=True)
+        elif JSON_KEY_NATOMS in monomer:
+            if not isinstance(monomer[JSON_KEY_NATOMS], int) or monomer[JSON_KEY_NATOMS] <= 0:
+                raise ValueError(f"Monomer '{monomer_id_for_log}' key '{JSON_KEY_NATOMS}' must be a positive integer.")
+        else:
+            raise ValueError(f"Monomer '{monomer_id_for_log}' must define either '{JSON_KEY_INDEX}' or '{JSON_KEY_NATOMS}'.")
+
         if monomer[JSON_KEY_SPIN_MULT] < 1:
             raise ValueError(f"Monomer '{monomer_id_for_log}' key '{JSON_KEY_SPIN_MULT}' must be a positive integer.")
         if JSON_KEY_MOL_FORMULA not in monomer:
@@ -203,6 +316,8 @@ def load_system_info(system_info_path: str, aggregate: int) -> Tuple[List[Dict[s
 
     if solvent_data[JSON_KEY_NATOMS] <= 0:
         raise ValueError(f"Solvent entry '{solvent_id_for_log}' key '{JSON_KEY_NATOMS}' must be a positive integer.")
+    if JSON_KEY_INDEX in solvent_data and not isinstance(solvent_data[JSON_KEY_INDEX], (str, int)):
+        raise ValueError(f"Solvent entry '{solvent_id_for_log}' key '{JSON_KEY_INDEX}' must be a string like \"64-\".")
     if not solvent_data[JSON_KEY_CHARGES_ARRAY] and solvent_data[JSON_KEY_NATOMS] > 0:
         raise ValueError(f"Solvent entry '{solvent_id_for_log}' key '{JSON_KEY_CHARGES_ARRAY}' must be a non-empty list when nAtoms > 0.")
     if len(solvent_data[JSON_KEY_CHARGES_ARRAY]) != solvent_data[JSON_KEY_NATOMS]:
@@ -371,32 +486,25 @@ def localize_solvent_and_prepare_regions(
         core_coords           : (Ncore, 3) core coordinates (used for centroid distances)
         n_atoms_per_monomer   : per-monomer core atom counts
     """
-    n_atoms_per_monomer_list: List[int] = [m[JSON_KEY_NATOMS] for m in monomers_meta]
-    total_core_atom_count = sum(n_atoms_per_monomer_list)
-
     atoms_all, coords_all, _ = read_xyz(main_xyz_input_filepath)
-    if len(atoms_all) < total_core_atom_count:
-        msg = (f"Input XYZ '{main_xyz_input_filepath}' has fewer atoms ({len(atoms_all)}) "
-               f"than the core requires ({total_core_atom_count}).")
-        print(f"ERROR: {msg}", file=sys.stderr)
-        write_to_log(msg, is_error=True)
-        raise ValueError(msg)
+    n_total = len(atoms_all)
 
-    core_atoms = atoms_all[:total_core_atom_count]
-    core_coords = coords_all[:total_core_atom_count]
-    solvent_atoms = atoms_all[total_core_atom_count:]
-    solvent_coords = coords_all[total_core_atom_count:]
+    # Map trajectory atoms to each monomer and to the solvent (explicit 'index' or sequential 'nAtoms').
+    monomer_indices, solvent_indices = resolve_system_indices(monomers_meta, solvent_meta, n_total)
+    n_atoms_per_monomer_list: List[int] = [len(ix) for ix in monomer_indices]
+
+    # Per-monomer core atoms/coords (built in monomer order so downstream slicing stays valid).
+    monomer_core_atoms: List[AtomListType] = [[atoms_all[i] for i in ix] for ix in monomer_indices]
+    monomer_core_coords: List[CoordType] = [coords_all[ix] if ix else np.empty((0, 3)) for ix in monomer_indices]
+    core_atoms: AtomListType = [a for block in monomer_core_atoms for a in block]
+    core_coords: CoordType = np.vstack(monomer_core_coords) if any(c.size for c in monomer_core_coords) else np.empty((0, 3))
+
+    solvent_atoms = [atoms_all[i] for i in solvent_indices]
+    solvent_coords = coords_all[solvent_indices] if solvent_indices else np.empty((0, 3))
 
     # Group solvent atoms into whole molecules.
     solvent_formula_counts = parse_formula(solvent_meta[JSON_KEY_MOL_FORMULA])
     all_solvent_groups = group_qm_molecules(solvent_atoms, solvent_coords, solvent_formula_counts)
-
-    # Per-monomer core coordinate slices.
-    monomer_core_coords: List[CoordType] = []
-    idx = 0
-    for n in n_atoms_per_monomer_list:
-        monomer_core_coords.append(core_coords[idx:idx + n])
-        idx += n
 
     # Single pass: assign each solvent molecule to its nearest monomer (if within radius).
     monomer_groups: List[List[SolventGroupType]] = [[] for _ in n_atoms_per_monomer_list]
@@ -421,11 +529,9 @@ def localize_solvent_and_prepare_regions(
     # Per-monomer QM regions and flags.
     qm_solvent_flags: Dict[str, bool] = {}
     monomer_qm_regions: List[SolventGroupType] = []
-    idx = 0
-    for i, n in enumerate(n_atoms_per_monomer_list):
-        mono_core_atoms = core_atoms[idx:idx + n]
-        mono_core_coords = core_coords[idx:idx + n]
-        idx += n
+    for i in range(len(monomer_indices)):
+        mono_core_atoms = monomer_core_atoms[i]
+        mono_core_coords = monomer_core_coords[i]
         add_atoms, add_coords = flatten_groups(monomer_groups[i])
         final_atoms = mono_core_atoms + add_atoms
         final_coords = np.vstack((mono_core_coords, add_coords)) if add_coords.size > 0 else mono_core_coords
