@@ -5,8 +5,7 @@
 **G**enerate **I**nputs for **Q**M/MM systems — in **Py**thon
 
 Turn a molecular-dynamics trajectory into ready-to-run **Gaussian** `.com` inputs
-(or **TeraChem**-friendly `.xyz` files) for monomers, dimers, and aggregates —
-with automatic QM/MM solvent partitioning.
+for monomers, dimers, and aggregates with automatic QM/MM solvent partitioning.
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![NumPy](https://img.shields.io/badge/numpy-required-013243?logo=numpy&logoColor=white)
@@ -19,15 +18,23 @@ with automatic QM/MM solvent partitioning.
 
 ## Table of contents
 
-- [Why GIQPy?](#why-giqpy)
-- [How it works](#how-it-works)
-- [Installation](#installation)
-- [Quick start](#quick-start)
-- [Input files](#input-files)
-- [Output files](#output-files)
-- [Command-line reference](#command-line-reference)
-- [Notes & tips](#notes--tips)
-- [Acknowledgements](#acknowledgements)
+- [GIQPy](#giqpy)
+  - [Table of contents](#table-of-contents)
+  - [Why GIQPy?](#why-giqpy)
+  - [How it works](#how-it-works)
+  - [Installation](#installation)
+  - [Quick start](#quick-start)
+  - [Input files](#input-files)
+    - [1. Trajectory (`--traj`)](#1-trajectory---traj)
+    - [2. `system_info.json` (`--system-info`)](#2-system_infojson---system-info)
+    - [3. Gaussian keywords (`--gauss-keywords`)](#3-gaussian-keywords---gauss-keywords)
+    - [4. Charge files (optional)](#4-charge-files-optional)
+  - [Output files](#output-files)
+  - [Command-line reference](#command-line-reference)
+    - [`giqpy.py` — trajectory → QM/MM XYZ files](#giqpypy--trajectory--qmmm-xyz-files)
+    - [`xyz-to-gaussian.py` — XYZ files → Gaussian `.com`](#xyz-to-gaussianpy--xyz-files--gaussian-com)
+  - [Notes \& tips](#notes--tips)
+  - [Acknowledgements](#acknowledgements)
 
 ---
 
