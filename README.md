@@ -2,10 +2,10 @@
 
 # GIQPy
 
-**G**enerate **I**nputs for **Q**M/MM systems — in **Py**thon
+**G**enerate **I**nputs for **Q**M/MM systems in **Py**thon
 
 Turn a molecular-dynamics trajectory into ready-to-run QM/MM inputs for monomers,
-dimers, and aggregates — with automatic QM/MM solvent partitioning — and optionally
+dimers, and aggregates with automatic QM/MM solvent partitioning and functionality to 
 export them as **Gaussian** `.com` files.
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
