@@ -3,7 +3,7 @@ POSSIBLE CHANGES - Naming Convention Suggestions
 ================================================================================
 Purpose : A parking lot for naming/clarity improvements to consider later.
 Style   : Prefer '-' (hyphens) over '_' (underscores) in names & comments.
-Status  : NOT YET APPLIED - suggestions only.
+Status  : APPLIED 2026-06-06 - all phases (A, B, C) executed. Kept for reference.
 ================================================================================
 
 

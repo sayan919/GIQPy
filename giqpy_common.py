@@ -9,7 +9,7 @@ from typing import List, Tuple, Optional, Dict, Any, Union
 
 # --- Constants ---
 AUTO_MM_SOLVENT_TRIGGER: str = "auto_detect_mm_solvent_from_input_xyz"
-TEMP_FRAME_XYZ_FILENAME: str = "_current_frame_data.xyz"
+TEMP_FRAME_XYZ_FILENAME: str = "current-frame.xyz"
 
 # --- JSON Keys Constants ---
 JSON_KEY_SYSTEM: str = "system"        # short label used to name a system's output files (e.g. "m1", "mA")
@@ -54,7 +54,7 @@ def split_frames(
     """
     Split a (possibly multi-frame) trajectory XYZ into per-frame directories.
 
-    For a single-frame input simply use --nFrames 1.
+    For a single-frame input simply use --num-frames 1.
     Returns a list of (frame_id_str, path_to_xyz_for_frame, output_dir_for_frame) tuples.
     """
     try:
@@ -633,11 +633,11 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
 def get_solvent_descriptor_suffix(entity_has_added_qm_solvent: bool, system_has_mm_solvent: bool) -> str:
     """Solvent descriptor part of a .com filename (without extension)."""
     if entity_has_added_qm_solvent and system_has_mm_solvent:
-        return "_qm_mm"
+        return "-qm-mm"
     if entity_has_added_qm_solvent:
-        return "_qm"
+        return "-qm"
     if system_has_mm_solvent:
-        return "_mm"
+        return "-mm"
     return ""
 
 

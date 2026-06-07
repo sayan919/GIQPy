@@ -9,24 +9,24 @@ This script handles geometry only. To turn the resulting XYZ files into Gaussian
 run xyz_to_gaussian.py afterwards (see run_giqpy.sh).
 
 Per frame it writes (into the frame's output directory):
-    {term}_qm.xyz        : aggregate QM region   (core + all QM solvent)
-    {system}_qm.xyz      : monomer QM region     (core + its UNIQUE QM solvent)
-    {term}_mm.xyz        : aggregate MM charges  (MM solvent only)            [if MM requested]
-    {system}_mm.xyz      : monomer MM charges    (other-monomer embedding + MM solvent) [if requested]
-where {term} is "dimer" for --nDyes 2 and "aggregate" otherwise, and {system} is the per-monomer
+    {term}-qm.xyz        : aggregate QM region   (core + all QM solvent)
+    {system}-qm.xyz      : monomer QM region     (core + its UNIQUE QM solvent)
+    {term}-mm.xyz        : aggregate MM charges  (MM solvent only)            [if MM requested]
+    {system}-mm.xyz      : monomer MM charges    (other-monomer embedding + MM solvent) [if requested]
+where {term} is "dimer" for --num-monomers 2 and "aggregate" otherwise, and {system} is the per-monomer
 label from the JSON "system" key (e.g. m1, m2).
 
 Flags:
-    --traj          (Required) : Multi-frame trajectory XYZ file (use --nFrames 1 for a single frame).
-    --nFrames       (Optional) : Number of frames to process (default: all).
-    --nDyes         (Required) : Number of core monomer units.
-    --system_info   (Required) : Single JSON defining all monomers and the solvent.
-    --qmSol_radius  (Optional) : QM solvent shell radius (Å) around core atoms (default 5.0; negative disables).
-    --mm_monomer    (Optional) : MM embedding from other monomers. '0' = zero charges at their positions;
+    --traj          (Required) : Multi-frame trajectory XYZ file (use --num-frames 1 for a single frame).
+    --num-frames    (Optional) : Number of frames to process (default: all).
+    --num-monomers  (Required) : Number of core monomer units.
+    --system-info   (Required) : Single JSON defining all monomers and the solvent.
+    --qm-radius     (Optional) : QM solvent shell radius (Å) around core atoms (default 5.0; negative disables).
+    --mm-monomer    (Optional) : MM embedding from other monomers. '0' = zero charges at their positions;
                                   or one charge file ("charge x y z") per monomer.
-    --mm_solvent    (Optional) : MM solvent. Flag alone = non-QM solvent charged from system_info;
+    --mm-solvent    (Optional) : MM solvent. Flag alone = non-QM solvent charged from system_info;
                                   or a path to an XYZ-like file ("charge x y z", 2 header lines).
-    --logfile       (Optional) : Log file name (default: giqpy_run.log).
+    --log-file      (Optional) : Log file name (default: giqpy-run.log).
 """
 import argparse
 import os
@@ -34,7 +34,7 @@ import sys
 import datetime
 from typing import List, Optional, Dict, Any, Tuple
 
-import functions as fn
+import giqpy_common as fn
 
 
 def resolve_mm_solvent(
@@ -87,7 +87,7 @@ def resolve_mm_monomer(
         return embedding
 
     if n_dyes == 1:
-        fn.write_to_log("--mm_monomer specified with --nDyes 1; no other monomers to embed.", is_warning=True)
+        fn.write_to_log("--mm-monomer specified with --num-monomers 1; no other monomers to embed.", is_warning=True)
         return embedding
 
     # Per-monomer core coordinate slices.
@@ -98,7 +98,7 @@ def resolve_mm_monomer(
         idx += n
 
     if mm_monomer_arg == ['0']:
-        fn.write_to_log("Applying zero charges for other-monomer embedding (--mm_monomer 0).")
+        fn.write_to_log("Applying zero charges for other-monomer embedding (--mm-monomer 0).")
         for i in range(n_dyes):
             for j in range(n_dyes):
                 if i == j:
@@ -108,7 +108,7 @@ def resolve_mm_monomer(
         return embedding
 
     if len(mm_monomer_arg) != n_dyes:
-        warn = (f"--mm_monomer was given {len(mm_monomer_arg)} charge file(s), but --nDyes is {n_dyes}. "
+        warn = (f"--mm-monomer was given {len(mm_monomer_arg)} charge file(s), but --num-monomers is {n_dyes}. "
                 f"Expected {n_dyes} file(s). MM monomer embedding charges will be skipped.")
         print(f"\nWARNING: {warn}")
         fn.write_to_log(warn, is_warning=True)
@@ -128,7 +128,8 @@ def write_mm_xyz(path: str, charges_xyzq: List[fn.MMChargeTupleType], comment: s
     """Write a list of (x,y,z,q) point charges as an MM XYZ file (charge in the first column)."""
     charges_col = [q for _, _, _, q in charges_xyzq]
     coords = [(x, y, z) for x, y, z, _ in charges_xyzq]
-    fn.write_xyz(path, charges_col, coords, comment=comment)
+    # NOTE: columns are 'charge x y z' (NOT a normal element XYZ).
+    fn.write_xyz(path, charges_col, coords, comment=f"{comment} | columns: charge x y z")
 
 
 def main() -> None:
@@ -137,45 +138,45 @@ def main() -> None:
         description="Generate QM-region and MM point-charge XYZ files from a trajectory XYZ.",
     )
     parser.add_argument('--traj', type=str, required=True,
-                        help='Multi-frame trajectory XYZ file. Use --nFrames 1 for a single XYZ input.')
-    parser.add_argument('--nFrames', type=int, default=None,
+                        help='Multi-frame trajectory XYZ file. Use --num-frames 1 for a single XYZ input.')
+    parser.add_argument('--num-frames', type=int, default=None,
                         help='Number of frames to process (default: all).')
-    parser.add_argument('--nDyes', type=int, required=True,
+    parser.add_argument('--num-monomers', type=int, required=True,
                         help='Number of core monomer units.')
-    parser.add_argument('--system_info', type=str, required=True,
+    parser.add_argument('--system-info', type=str, required=True,
                         help='JSON file with monomer and solvent metadata.')
-    parser.add_argument('--qmSol_radius', type=float, default=5.0,
+    parser.add_argument('--qm-radius', type=float, default=5.0,
                         help='Radius (Å) for QM solvent selection (default: 5.0). Negative disables QM solvent.')
-    parser.add_argument('--mm_monomer', type=str, nargs='*',
+    parser.add_argument('--mm-monomer', type=str, nargs='*',
                         help="MM embedding for other monomers: '0' for zero charges, or one charge file per monomer.")
-    parser.add_argument('--mm_solvent', type=str, nargs='?', const=fn.AUTO_MM_SOLVENT_TRIGGER, default=None,
+    parser.add_argument('--mm-solvent', type=str, nargs='?', const=fn.AUTO_MM_SOLVENT_TRIGGER, default=None,
                         help='MM solvent: XYZ-like charge file, or flag alone to auto-detect from non-QM solvent.')
-    parser.add_argument('--logfile', type=str, default="giqpy_run.log",
-                        help='Log file name (default: giqpy_run.log).')
+    parser.add_argument('--log-file', type=str, default="giqpy-run.log",
+                        help='Log file name (default: giqpy-run.log).')
     args = parser.parse_args()
 
     # --- Setup log ---
     try:
-        fn.log_file_handle = open(args.logfile, 'w')
+        fn.log_file_handle = open(args.log_file, 'w')
         fn.log_file_handle.write(f"GIQPy Run Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         fn.log_file_handle.write(f"Arguments: {vars(args)}\n\n")
         fn.log_file_handle.flush()
     except IOError as e:
-        print(f"CRITICAL ERROR: Could not open log file {args.logfile}: {e}. Exiting.", file=sys.stderr)
+        print(f"CRITICAL ERROR: Could not open log file {args.log_file}: {e}. Exiting.", file=sys.stderr)
         sys.exit(1)
 
-    if args.nDyes < 1:
-        err = "--nDyes must be at least 1."
+    if args.num_monomers < 1:
+        err = "--num-monomers must be at least 1."
         print(f"ERROR: {err}", file=sys.stderr)
         fn.write_to_log(err, is_error=True)
         parser.error(err)
 
     base_output_dir = os.getcwd()
-    combined_system_term = "dimer" if args.nDyes == 2 else "aggregate"
+    combined_system_term = "dimer" if args.num_monomers == 2 else "aggregate"
 
     # --- Load metadata once (was previously re-parsed every frame) ---
     try:
-        monomers_meta, solvent_meta = fn.load_system_info(args.system_info, args.nDyes)
+        monomers_meta, solvent_meta = fn.load_system_info(args.system_info, args.num_monomers)
     except Exception as e:
         print(f"CRITICAL ERROR loading system_info: {e}", file=sys.stderr)
         fn.write_to_log(f"CRITICAL ERROR loading system_info: {e}", is_error=True)
@@ -183,7 +184,7 @@ def main() -> None:
     solvent_name = solvent_meta.get(fn.JSON_KEY_NAME, "solvent")
 
     # --- Split frames ---
-    frames = fn.split_frames(args.traj, args.nFrames, base_output_dir)
+    frames = fn.split_frames(args.traj, args.num_frames, base_output_dir)
     total = len(frames)
     if total == 0:
         err = f"No frames could be processed from trajectory: {args.traj}"
@@ -205,7 +206,7 @@ def main() -> None:
         try:
             (monomer_qm_regions, aggregate_qm_region, non_qm_sol_groups,
              qm_solvent_flags, core_coords, n_atoms_per_monomer) = \
-                fn.localize_solvent_and_prepare_regions(temp_xyz_path, monomers_meta, solvent_meta, args.qmSol_radius)
+                fn.localize_solvent_and_prepare_regions(temp_xyz_path, monomers_meta, solvent_meta, args.qm_radius)
         except Exception as e:
             err = f"Error during region preparation for frame {frame_id}: {e}"
             print(f"\nERROR: {err}", file=sys.stderr)
@@ -215,7 +216,7 @@ def main() -> None:
 
         # Title/comment base with optional m1-m2 centroid distance.
         distance_str = ""
-        if args.nDyes >= 2:
+        if args.num_monomers >= 2:
             dist = fn.calculate_centroid_distance_between_first_two(core_coords, n_atoms_per_monomer)
             if dist is not None:
                 distance_str = f"(m1-m2 centroid dist: {dist:.2f} A)"
@@ -223,31 +224,31 @@ def main() -> None:
 
         # --- Resolve MM charges (solvent + inter-monomer embedding) ---
         mm_solvent_charges, system_has_mm_solvent = resolve_mm_solvent(args.mm_solvent, non_qm_sol_groups, solvent_meta)
-        mm_embedding = resolve_mm_monomer(args.mm_monomer, args.nDyes, core_coords, n_atoms_per_monomer)
+        mm_embedding = resolve_mm_monomer(args.mm_monomer, args.num_monomers, core_coords, n_atoms_per_monomer)
 
         # --- QM region XYZ files ---
         agg_qm_atoms, agg_qm_coords = aggregate_qm_region
         agg_qm_sol = " + qm " + solvent_name if qm_solvent_flags.get('aggregate_has_added_qm_solvent') else ""
-        fn.write_xyz(os.path.join(out_dir, f'{combined_system_term}_qm.xyz'),
+        fn.write_xyz(os.path.join(out_dir, f'{combined_system_term}-qm.xyz'),
                      agg_qm_atoms, agg_qm_coords, comment=f"{comment_base} qm{agg_qm_sol}")
 
         for i, (mono_atoms, mono_coords) in enumerate(monomer_qm_regions):
             has_qm_sol = qm_solvent_flags.get(f'monomer_{i}_has_added_qm_solvent', False)
             qm_sol_desc = f" + its unique qm {solvent_name}" if has_qm_sol else ""
-            fn.write_xyz(os.path.join(out_dir, f'{monomer_labels[i]}_qm.xyz'),
+            fn.write_xyz(os.path.join(out_dir, f'{monomer_labels[i]}-qm.xyz'),
                          mono_atoms, mono_coords,
                          comment=f"{monomer_names[i]} {monomer_labels[i]} qm{qm_sol_desc}")
 
         # --- MM charge XYZ files ---
         # Aggregate: MM solvent only.
         if mm_solvent_charges:
-            write_mm_xyz(os.path.join(out_dir, f'{combined_system_term}_mm.xyz'),
+            write_mm_xyz(os.path.join(out_dir, f'{combined_system_term}-mm.xyz'),
                          mm_solvent_charges,
                          comment=f"mm {solvent_name} for {base_system_name} {combined_system_term}")
             fn.write_to_log(f"Wrote aggregate MM charges ({len(mm_solvent_charges)} solvent point charges).")
 
         # Monomers: other-monomer embedding + MM solvent.
-        for i in range(args.nDyes):
+        for i in range(args.num_monomers):
             combined: List[fn.MMChargeTupleType] = []
             combined.extend(mm_embedding[i])
             if mm_solvent_charges:
@@ -258,10 +259,10 @@ def main() -> None:
                     comment = f"mm monomer + mm {solvent_name} for {monomer_names[i]} {monomer_labels[i]}"
                 else:
                     comment = f"mm {solvent_name} for {monomer_names[i]} {monomer_labels[i]}"
-                write_mm_xyz(os.path.join(out_dir, f'{monomer_labels[i]}_mm.xyz'), combined, comment=comment)
+                write_mm_xyz(os.path.join(out_dir, f'{monomer_labels[i]}-mm.xyz'), combined, comment=comment)
                 fn.write_to_log(f"Wrote {monomer_labels[i]} MM charges ({len(combined)} point charges).")
             elif args.mm_monomer or args.mm_solvent:
-                warn = f"No MM charges to write for {monomer_labels[i]}; '{monomer_labels[i]}_mm.xyz' skipped."
+                warn = f"No MM charges to write for {monomer_labels[i]}; '{monomer_labels[i]}-mm.xyz' skipped."
                 fn.write_to_log(warn, is_warning=True)
 
         # Cleanup temporary per-frame XYZ.

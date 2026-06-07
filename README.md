@@ -4,10 +4,10 @@ The workflow is split into two scripts:
 
 1. **`giqpy.py`** — turns a trajectory (or single frame) into **.xyz** files: one QM-region file
    and one MM point-charge file per monomer and for the aggregate. 
-2. **`xyz_to_gaussian.py`** — converts those `.xyz` files into `Gaussian` **.com** input files
+2. **`xyz-to-gaussian.py`** — converts those `.xyz` files into `Gaussian` **.com** input files
    (per monomer, the aggregate/dimer, or an EET-analysis dimer) with a given set of keywords.
 
-`run_giqpy.sh` chains both stages together.
+`run-giqpy.sh` chains both stages together.
 
 ## Overview
 
@@ -42,86 +42,86 @@ The workflow is split into two scripts:
 ### `giqpy.py` (XYZ generation)
 `--traj` *(Required)*:
   - ***Number of inputs:*** 1 file
-  - Multi-frame trajectory XYZ file. For a single-frame input use `--nFrames 1`.
+  - Multi-frame trajectory XYZ file. For a single-frame input use `--num-frames 1`.
 ---
-`--nFrames` *(Optional)*:
+`--num-frames` *(Optional)*:
   - ***Number of inputs:*** 1 integer
   - Number of frames to process (default: all).
 ---
-`--nDyes` *(Required)*:
+`--num-monomers` *(Required)*:
   - ***Number of inputs:*** 1 integer
   - Number of core monomer units.
 ---
-`--system_info` *(Required)*:
+`--system-info` *(Required)*:
   - ***Number of inputs:*** 1 file
   - JSON defining monomer and solvent metadata (format described below)
 ---
-`--qmSol_radius` *(Optional)*:
+`--qm-radius` *(Optional)*:
   - ***Number of inputs:*** 1 float
   - Radius in Å for selecting explicit QM solvent shell around core atoms
 ---
-`--mm_monomer` *(Optional)*:
+`--mm-monomer` *(Optional)*:
   - ***Number of inputs:*** 0 or N files
   - Include MM embedding charges from other monomers
   - `0` = all atoms are assigned zero charges
-  -  List charge files with “charge x y z” per line for `N` monomers if `--nDyes N`
+  -  List charge files with “charge x y z” per line for `N` monomers if `--num-monomers N`
   - Omit flag for no MM monomer charges
 ---
-`--mm_solvent` *(Optional)*:
+`--mm-solvent` *(Optional)*:
   - ***Number of inputs:*** 0 or 1 file
   - Include MM solvent embedding
   - flag alone to auto-detect non-QM solvent and assign charges from `system_info`
   - or provide XYZ-like file path of charges
   - omit flag for no MM solvent
 ---
-- `--logfile`: (Optional)
+- `--log-file`: (Optional)
   - ***Number of inputs:*** 0 or 1 string
-  - Name for detailed log file (default `giqpy_run.log`)
+  - Name for detailed log file (default `giqpy-run.log`)
 
-### `xyz_to_gaussian.py` (Gaussian .com generation)
-`--indir` *(Optional)*:
+### `xyz-to-gaussian.py` (Gaussian .com generation)
+`--input-dir` *(Optional)*:
   - ***Number of inputs:*** 1 directory
   - Directory holding the XYZ files, or a parent containing numbered per-frame subdirectories (default: current directory).
 ---
-`--nDyes` *(Required)*:
+`--num-monomers` *(Required)*:
   - ***Number of inputs:*** 1 integer
   - Number of core monomer units (must match the `giqpy.py` run).
 ---
-`--system_info` *(Required)*:
+`--system-info` *(Required)*:
   - ***Number of inputs:*** 1 file
   - Same JSON used by `giqpy.py` (provides charge / spin / names).
 ---
-`--gauss_keywords` *(Required)*:
+`--gauss-keywords` *(Required)*:
   - ***Number of inputs:*** 1 file
   - Plain-text file of Gaussian route section keywords (one per line)
 ---
-`--gauss_files` *(Optional)*:
+`--com-files` *(Optional)*:
   - ***Number of inputs:*** 1 string : `monomer`, `dimer`, `both` (default `both`)
   - Which `.com` files to generate.
 ---
 `--eetg` *(Optional)*:
   - ***Number of inputs:*** 0 (flag)
-  - Generate only EETG `.com` for dimers (requires `--nDyes 2`)
+  - Generate only EETG `.com` for dimers (requires `--num-monomers 2`)
 ---
 - `--tag`: (Optional)
   - ***Number of inputs:*** 0 or 1 string
   - Custom tag appended to generated .com filenames
 ---
-- `--logfile`: (Optional)
+- `--log-file`: (Optional)
   - ***Number of inputs:*** 0 or 1 string
-  - Name for detailed log file (default `xyz_to_gaussian.log`)
+  - Name for detailed log file (default `xyz-to-gaussian.log`)
 
 ## Quick Start
 
 ```bash
 # 1) generate QM-region + MM-charge XYZ files
-python giqpy.py --traj my_traj.xyz --nFrames 1 --nDyes 2 \
-    --system_info examples/cv_dimer_water.json --qmSol_radius 5 --mm_solvent
+python giqpy.py --traj my_traj.xyz --num-frames 1 --num-monomers 2 \
+    --system-info examples/cv_dimer_water.json --qm-radius 5 --mm-solvent
 
 # 2) build Gaussian .com files from those XYZ files
-python xyz_to_gaussian.py --indir . --nDyes 2 \
-    --system_info examples/cv_dimer_water.json \
-    --gauss_keywords examples/keywords.txt --gauss_files monomer
+python xyz-to-gaussian.py --input-dir . --num-monomers 2 \
+    --system-info examples/cv_dimer_water.json \
+    --gauss-keywords examples/keywords.txt --com-files monomer
 ```
 
 ---
@@ -184,7 +184,7 @@ entry describing the solvent.
   ```
 
 - **`system`** — the short label used to **name the output files** for that monomer
-  (e.g. `m1_qm.xyz`, `m1.com`). Call them `m1`/`m2`, `mA`/`mB`, or anything you like.
+  (e.g. `m1-qm.xyz`, `m1.com`). Call them `m1`/`m2`, `mA`/`mB`, or anything you like.
   If omitted, the code falls back to `monomer1`, `monomer2`, …
 - **`name`** — descriptive name that appears in `.xyz`/`.com` titles and comments (not filenames).
 - **`index`** — 0-based atom index spec selecting that system's atoms from each trajectory frame:
@@ -202,7 +202,7 @@ entry describing the solvent.
 
 ### `Charges`
 
-- ### (a) Inter‑monomer charges (`--mm_monomer`)
+- ### (a) Inter‑monomer charges (`--mm-monomer`)
 
   Plain text with **four** columns (charge x y z) and two header lines (XYZ‑like):
 
@@ -213,34 +213,34 @@ entry describing the solvent.
   …
   ```
 
-  Provide **N** such files when `--nDyes N` so every monomer can be embedded
+  Provide **N** such files when `--num-monomers N` so every monomer can be embedded
   in the charges of all other monomers.
 
-- ### (b) Explicit MM solvent (`--mm_solvent`)
+- ### (b) Explicit MM solvent (`--mm-solvent`)
 
   Same format as above but the first column is **charge**, followed by *x y z*.
 
 
 ## Outputs
-- **`giqpy.py`** (always, per frame; `{term}` is `dimer` for `--nDyes 2`, else `aggregate`):
-  - `{term}_qm.xyz`, `{system}_qm.xyz` : QM-region geometries (core + QM solvent).
-  - `{term}_mm.xyz`, `{system}_mm.xyz` : MM point charges (`charge x y z`), only when MM is requested.
+- **`giqpy.py`** (always, per frame; `{term}` is `dimer` for `--num-monomers 2`, else `aggregate`):
+  - `{term}-qm.xyz`, `{system}-qm.xyz` : QM-region geometries (core + QM solvent).
+  - `{term}-mm.xyz`, `{system}-mm.xyz` : MM point charges (`charge x y z`), only when MM is requested.
     The aggregate MM file holds MM solvent only; monomer MM files also include other-monomer embedding.
     (`{system}` is the per-monomer label from the JSON `system` key, e.g. `m1`, `m2`.)
-- **`xyz_to_gaussian.py`** (from the XYZ files above):
-  - monomer `.com` files named by the `system` label: `m1.com`, `m2.com`, … (suffix `_qm`/`_mm`/`_qm_mm` reflects solvent).
+- **`xyz-to-gaussian.py`** (from the XYZ files above):
+  - monomer `.com` files named by the `system` label: `m1.com`, `m2.com`, … (suffix `-qm`/`-mm`/`-qm-mm` reflects solvent).
   - aggregate/dimer `.com` file.
   - EETG `.com` for dimers when `--eetg` is specified.
 
 - Temporary files (`_current_frame_data.xyz`) are deleted after use when processing trajectories.
-- Log files (`giqpy_run.log`, `xyz_to_gaussian.log`) are created in the current working directory.
+- Log files (`giqpy-run.log`, `xyz-to-gaussian.log`) are created in the current working directory.
 
 ---
 
 ## Logging & error handling
 
 GIQPy writes a concise console progress bar and mirrors all
-messages—including stack traces on uncaught exceptions—to `giqpy_run.log`.
+messages—including stack traces on uncaught exceptions—to `giqpy-run.log`.
 Fatal errors return a non‑zero exit status.
 
 ---

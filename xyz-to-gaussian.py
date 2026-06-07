@@ -6,21 +6,21 @@
 Convert GIQPy XYZ output into Gaussian .com input files.
 
 Reads the per-frame XYZ files produced by giqpy.py:
-    {term}_qm.xyz, {system}_qm.xyz   : QM geometries
-    {term}_mm.xyz, {system}_mm.xyz   : MM point charges ("charge x y z")
-and writes the corresponding Gaussian .com files. ({term} is "dimer" for --nDyes 2,
+    {term}-qm.xyz, {system}-qm.xyz   : QM geometries
+    {term}-mm.xyz, {system}-mm.xyz   : MM point charges ("charge x y z")
+and writes the corresponding Gaussian .com files. ({term} is "dimer" for --num-monomers 2,
 otherwise "aggregate"; {system} is the per-monomer label from the JSON "system" key.)
 
 Flags:
-    --indir         (Optional) : Directory holding the XYZ files, or a parent containing numbered
+    --input-dir     (Optional) : Directory holding the XYZ files, or a parent containing numbered
                                  per-frame subdirectories (default: current directory).
-    --nDyes         (Required) : Number of core monomer units (must match the giqpy run).
-    --system_info   (Required) : Same JSON used by giqpy (provides charge / spin / names).
-    --gauss_keywords(Required) : File with the Gaussian route section keywords.
-    --gauss_files   (Optional) : monomer | dimer | both (default: both).
-    --eetg          (Optional) : Generate only the EETG dimer input (requires --nDyes 2).
-    --tag           (Optional) : Custom tag appended to .com filenames (e.g. ..._TAG.com).
-    --logfile       (Optional) : Log file name (default: xyz_to_gaussian.log).
+    --num-monomers  (Required) : Number of core monomer units (must match the giqpy run).
+    --system-info   (Required) : Same JSON used by giqpy (provides charge / spin / names).
+    --gauss-keywords(Required) : File with the Gaussian route section keywords.
+    --com-files     (Optional) : monomer | dimer | both (default: both).
+    --eetg          (Optional) : Generate only the EETG dimer input (requires --num-monomers 2).
+    --tag           (Optional) : Custom tag appended to .com filenames (e.g. ...-TAG.com).
+    --log-file      (Optional) : Log file name (default: xyz_to_gaussian.log).
 """
 import argparse
 import os
@@ -28,7 +28,7 @@ import sys
 import datetime
 from typing import List, Optional, Dict, Any, Tuple
 
-import functions as fn
+import giqpy_common as fn
 
 
 def find_frame_dirs(indir: str, term: str) -> List[str]:
@@ -36,7 +36,7 @@ def find_frame_dirs(indir: str, term: str) -> List[str]:
     Return the directories to process. If ``indir`` contains numbered subdirectories with QM files,
     return those (numerically sorted); otherwise process ``indir`` itself.
     """
-    marker = f"{term}_qm.xyz"  # giqpy always writes the aggregate QM file
+    marker = f"{term}-qm.xyz"  # giqpy always writes the aggregate QM file
 
     def has_xyz(d: str) -> bool:
         return os.path.exists(os.path.join(d, marker))
@@ -69,7 +69,7 @@ def build_title_base(out_dir: str, term: str, base_system_name: str, n_dyes: int
     """Reconstruct the aggregate title base, including the m1-m2 centroid distance when available."""
     distance_str = ""
     if n_dyes >= 2:
-        agg_qm = os.path.join(out_dir, f"{term}_qm.xyz")
+        agg_qm = os.path.join(out_dir, f"{term}-qm.xyz")
         if os.path.exists(agg_qm):
             _, coords, _ = fn.read_xyz(agg_qm)
             total_core = sum(n_atoms_per_monomer)
@@ -104,7 +104,7 @@ def generate_for_dir(
     total_spin = total_spin if total_spin > 0 else 1
 
     # MM solvent presence is signalled by the aggregate MM file (solvent-only by construction).
-    agg_mm = load_mm(os.path.join(out_dir, f"{term}_mm.xyz"))
+    agg_mm = load_mm(os.path.join(out_dir, f"{term}-mm.xyz"))
     system_has_mm_solvent = agg_mm is not None
 
     title_base = build_title_base(out_dir, term, base_system_name, n_dyes, n_atoms_per_monomer)
@@ -112,10 +112,10 @@ def generate_for_dir(
     # --- EETG dimer input ---
     if eetg:
         if n_dyes != 2:
-            fn.write_to_log("EETG requires --nDyes 2; skipping EETG.", is_warning=True)
+            fn.write_to_log("EETG requires --num-monomers 2; skipping EETG.", is_warning=True)
         elif gen_aggregate:
-            m1_path = os.path.join(out_dir, f"{monomer_labels[0]}_qm.xyz")
-            m2_path = os.path.join(out_dir, f"{monomer_labels[1]}_qm.xyz")
+            m1_path = os.path.join(out_dir, f"{monomer_labels[0]}-qm.xyz")
+            m2_path = os.path.join(out_dir, f"{monomer_labels[1]}-qm.xyz")
             if not (os.path.exists(m1_path) and os.path.exists(m2_path)):
                 fn.write_to_log("EETG: monomer QM files missing; skipping EETG.", is_warning=True)
             else:
@@ -129,7 +129,7 @@ def generate_for_dir(
                     (m2_atoms, m2_coords, monomers_meta[1][fn.JSON_KEY_CHARGE], monomers_meta[1][fn.JSON_KEY_SPIN_MULT]),
                 ]
                 fn.write_com_file(
-                    os.path.join(out_dir, f"{term}_eetg{suffix}{tag_suffix}.com"),
+                    os.path.join(out_dir, f"{term}-eetg{suffix}{tag_suffix}.com"),
                     keywords, title, total_charge, total_spin,
                     [], [], mm_charges_list=agg_mm, fragment_definitions=frag_defs,
                 )
@@ -140,13 +140,13 @@ def generate_for_dir(
     if gen_monomer:
         for i in range(n_dyes):
             label = monomer_labels[i]
-            qm_path = os.path.join(out_dir, f"{label}_qm.xyz")
+            qm_path = os.path.join(out_dir, f"{label}-qm.xyz")
             if not os.path.exists(qm_path):
-                fn.write_to_log(f"{label}_qm.xyz not found in {out_dir}; skipping.", is_warning=True)
+                fn.write_to_log(f"{label}-qm.xyz not found in {out_dir}; skipping.", is_warning=True)
                 continue
             atoms, coords, _ = fn.read_xyz(qm_path)
             has_qm_sol = len(atoms) > n_atoms_per_monomer[i]
-            mm_charges = load_mm(os.path.join(out_dir, f"{label}_mm.xyz"))
+            mm_charges = load_mm(os.path.join(out_dir, f"{label}-mm.xyz"))
             suffix = fn.get_solvent_descriptor_suffix(has_qm_sol, system_has_mm_solvent)
             title = f"{monomer_names[i]} {label}{fn.get_solvent_title_fragment(has_qm_sol, system_has_mm_solvent, solvent_name)}".strip()
             fn.write_com_file(
@@ -159,9 +159,9 @@ def generate_for_dir(
 
     # --- Aggregate input ---
     if gen_aggregate:
-        qm_path = os.path.join(out_dir, f"{term}_qm.xyz")
+        qm_path = os.path.join(out_dir, f"{term}-qm.xyz")
         if not os.path.exists(qm_path):
-            fn.write_to_log(f"{term}_qm.xyz not found in {out_dir}; skipping aggregate.", is_warning=True)
+            fn.write_to_log(f"{term}-qm.xyz not found in {out_dir}; skipping aggregate.", is_warning=True)
         else:
             atoms, coords, _ = fn.read_xyz(qm_path)
             has_qm_sol = len(atoms) > sum(n_atoms_per_monomer)
@@ -180,35 +180,35 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Convert GIQPy XYZ output into Gaussian .com input files.",
     )
-    parser.add_argument('--indir', type=str, default=os.getcwd(),
+    parser.add_argument('--input-dir', type=str, default=os.getcwd(),
                         help='Directory with the XYZ files, or a parent of numbered frame subdirectories (default: cwd).')
-    parser.add_argument('--nDyes', type=int, required=True, help='Number of core monomer units.')
-    parser.add_argument('--system_info', type=str, required=True,
+    parser.add_argument('--num-monomers', type=int, required=True, help='Number of core monomer units.')
+    parser.add_argument('--system-info', type=str, required=True,
                         help='JSON file with monomer and solvent metadata (provides charge/spin/names).')
-    parser.add_argument('--gauss_keywords', type=str, required=True,
+    parser.add_argument('--gauss-keywords', type=str, required=True,
                         help='File with the Gaussian route section keywords.')
-    parser.add_argument('--gauss_files', choices=['monomer', 'dimer', 'both'], default='both',
+    parser.add_argument('--com-files', choices=['monomer', 'dimer', 'both'], default='both',
                         help='Which .com files to generate (default: both).')
     parser.add_argument('--eetg', action='store_true',
-                        help='Generate only the EETG dimer input (requires --nDyes 2).')
+                        help='Generate only the EETG dimer input (requires --num-monomers 2).')
     parser.add_argument('--tag', type=str, default="", help='Optional custom tag for .com filenames.')
-    parser.add_argument('--logfile', type=str, default="xyz_to_gaussian.log",
-                        help='Log file name (default: xyz_to_gaussian.log).')
+    parser.add_argument('--log-file', type=str, default="xyz-to-gaussian.log",
+                        help='Log file name (default: xyz-to-gaussian.log).')
     args = parser.parse_args()
 
     try:
-        fn.log_file_handle = open(args.logfile, 'w')
+        fn.log_file_handle = open(args.log_file, 'w')
         fn.log_file_handle.write(f"xyz_to_gaussian Run Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         fn.log_file_handle.write(f"Arguments: {vars(args)}\n\n")
         fn.log_file_handle.flush()
     except IOError as e:
-        print(f"CRITICAL ERROR: Could not open log file {args.logfile}: {e}. Exiting.", file=sys.stderr)
+        print(f"CRITICAL ERROR: Could not open log file {args.log_file}: {e}. Exiting.", file=sys.stderr)
         sys.exit(1)
 
-    if args.nDyes < 1:
-        parser.error("--nDyes must be at least 1.")
-    if args.eetg and args.nDyes != 2:
-        parser.error("--eetg requires --nDyes 2.")
+    if args.num_monomers < 1:
+        parser.error("--num-monomers must be at least 1.")
+    if args.eetg and args.num_monomers != 2:
+        parser.error("--eetg requires --num-monomers 2.")
     if not os.path.exists(args.gauss_keywords) or os.path.getsize(args.gauss_keywords) == 0:
         err = f"Gaussian keywords file '{args.gauss_keywords}' not found or is empty."
         print(f"ERROR: {err}", file=sys.stderr)
@@ -217,21 +217,21 @@ def main() -> None:
 
     keywords = fn.load_keywords_from_file(args.gauss_keywords)
     try:
-        monomers_meta, solvent_meta = fn.load_system_info(args.system_info, args.nDyes)
+        monomers_meta, solvent_meta = fn.load_system_info(args.system_info, args.num_monomers)
     except Exception as e:
         print(f"CRITICAL ERROR loading system_info: {e}", file=sys.stderr)
         fn.write_to_log(f"CRITICAL ERROR loading system_info: {e}", is_error=True)
         sys.exit(1)
     solvent_name = solvent_meta.get(fn.JSON_KEY_NAME, "solvent")
 
-    term = "dimer" if args.nDyes == 2 else "aggregate"
-    gen_monomer = args.gauss_files in ('monomer', 'both')
-    gen_aggregate = args.gauss_files in ('dimer', 'both')
-    tag_suffix = f"_{args.tag}" if args.tag else ""
+    term = "dimer" if args.num_monomers == 2 else "aggregate"
+    gen_monomer = args.com_files in ('monomer', 'both')
+    gen_aggregate = args.com_files in ('dimer', 'both')
+    tag_suffix = f"-{args.tag}" if args.tag else ""
 
-    frame_dirs = find_frame_dirs(args.indir, term)
+    frame_dirs = find_frame_dirs(args.input_dir, term)
     if not frame_dirs:
-        err = f"No GIQPy XYZ files found under '{args.indir}'. Run giqpy.py first."
+        err = f"No GIQPy XYZ files found under '{args.input_dir}'. Run giqpy.py first."
         print(f"ERROR: {err}", file=sys.stderr)
         fn.write_to_log(err, is_error=True)
         sys.exit(1)
@@ -241,7 +241,7 @@ def main() -> None:
         print(f"[{idx + 1}/{total}] Writing .com files in {out_dir}")
         fn.write_to_log(f"\n\n--- Frame dir {idx + 1}/{total}: {out_dir} ---")
         try:
-            generate_for_dir(out_dir, term, monomers_meta, solvent_name, args.nDyes,
+            generate_for_dir(out_dir, term, monomers_meta, solvent_name, args.num_monomers,
                              keywords, gen_monomer, gen_aggregate, args.eetg, tag_suffix)
         except Exception as e:
             err = f"Error generating .com files in {out_dir}: {e}"
