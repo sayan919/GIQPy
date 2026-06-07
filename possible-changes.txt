@@ -1,0 +1,95 @@
+================================================================================
+POSSIBLE CHANGES - Naming Convention Suggestions
+================================================================================
+Purpose : A parking lot for naming/clarity improvements to consider later.
+Style   : Prefer '-' (hyphens) over '_' (underscores) in names & comments.
+Status  : APPLIED 2026-06-06 - all phases (A, B, C) executed. Kept for reference.
+================================================================================
+
+
+--------------------------------------------------------------------------------
+0. IMPORTANT CONSTRAINTS (what hyphens can and cannot touch)
+--------------------------------------------------------------------------------
+- CLI flags        : hyphens are ideal. argparse maps "--num-monomers" to
+                     args.num_monomers automatically (user-facing name is
+                     hyphenated, code stays valid).
+- Filenames        : hyphens fine for scripts that are RUN, and for output files.
+                     EXCEPTION: functions.py is IMPORTED, so it cannot take a
+                     hyphen (Python can't import a hyphenated module name).
+- Code identifiers : variables / function names CANNOT use hyphens ('-' is the
+                     minus operator). They stay snake_case (PEP8).
+=> Hyphen preference realistically applies to: CLI flags, filenames, and
+   human-readable text (comments / titles / log messages).
+
+
+--------------------------------------------------------------------------------
+1. CLI ARGUMENTS
+--------------------------------------------------------------------------------
+Biggest clarity wins: fix inconsistent casing (nFrames, qmSol_radius) and the
+niche jargon "nDyes".
+
+  CURRENT            ->  PROPOSED          REASON
+  --nDyes            ->  --num-monomers    "dyes" is niche; README says
+                                           "core monomer units"
+  --nFrames          ->  --num-frames      drop camelCase; be consistent
+  --qmSol_radius     ->  --qm-radius       camelCase+underscore mix; "qm radius"
+                                           is enough
+  --system_info      ->  --system-info     hyphen
+  --mm_monomer       ->  --mm-monomer      hyphen
+  --mm_solvent       ->  --mm-solvent      hyphen
+  --logfile          ->  --log-file        hyphen
+  --gauss_keywords   ->  --gauss-keywords  hyphen
+  --gauss_files      ->  --com-files       "gauss_files" is vague; this arg picks
+                                           WHICH .com files (monomer/dimer/both)
+  --indir            ->  --input-dir       spell it out
+  --traj             ->  (keep)            already clear
+  --eetg             ->  (keep)            domain term
+  --tag              ->  (keep)            already short
+
+
+--------------------------------------------------------------------------------
+2. FILES
+--------------------------------------------------------------------------------
+  CURRENT              ->  PROPOSED                NOTE
+  xyz_to_gaussian.py   ->  xyz-to-gaussian.py      run, never imported -> safe
+  run_giqpy.sh         ->  run-giqpy.sh            hyphen
+  functions.py         ->  giqpy_common.py         OPTIONAL; must stay hyphen-free
+                                                   (it is imported). Rename only
+                                                   if a more descriptive name is
+                                                   wanted; otherwise keep.
+  giqpy.py             ->  (keep)                  it's the tool's name/brand
+
+
+--------------------------------------------------------------------------------
+3. OUTPUT FILENAMES   (higher impact - decide before changing)
+--------------------------------------------------------------------------------
+Currently underscored:
+    dimer_qm.xyz, monomer1_mm.xyz, dimer_eetg_qm_mm_TAG.com, etc.
+Hyphenated equivalent:
+    dimer-qm.xyz, monomer1-mm.xyz, dimer-eetg-qm-mm-TAG.com
+
+WARNING: purely cosmetic, but WILL BREAK any downstream scripts/parsers that
+glob the current names. Do this only if nothing depends on the existing names.
+
+Temp file: _current_frame_data.xyz -> current-frame.xyz (or keep hidden).
+
+
+--------------------------------------------------------------------------------
+4. COMMENTS / TEXT WORDING   (no hyphen issue - clarity only)
+--------------------------------------------------------------------------------
+- MM .xyz files store "charge x y z" in the element column (NOT a normal element
+  XYZ). Add a one-line header comment noting this, since the format looks like a
+  standard element XYZ but isn't.
+- The output term switches between "dimer" (--num-monomers 2) and "aggregate"
+  (otherwise). Document this once near the top of each script.
+
+
+--------------------------------------------------------------------------------
+5. SUGGESTED ROLLOUT (lowest risk first)
+--------------------------------------------------------------------------------
+  Phase A (low risk)  : rename CLI flags + script files (xyz-to-gaussian.py,
+                        run-giqpy.sh); update README + comments to match.
+  Phase B (optional)  : rename functions.py -> giqpy_common.py.
+  Phase C (higher risk): hyphenate generated .xyz/.com output filenames
+                        (only if no downstream tooling depends on them).
+================================================================================

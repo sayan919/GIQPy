@@ -1,3 +1,5 @@
 dev.log
 tests
 previous_version
+__pycache__/
+*.pyc
