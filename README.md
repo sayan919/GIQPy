@@ -64,18 +64,17 @@ GIQPy is a two-stage pipeline. Stage 1 is geometry; stage 2 is QM-package format
 
 ```mermaid
 flowchart LR
-    T[Trajectory XYZ]:::in --> G[giqpy.py]
-    J[system_info.json]:::in --> G
-    G --> X["QM-region .xyz<br/>+ MM-charge .xyz<br/>(per frame)"]:::mid
+    T[Trajectory XYZ] --> G[giqpy.py]
+    J[system_info.json] --> G
+    G --> X["QM-region .xyz<br/>+ MM-charge .xyz<br/>(per frame)"]
     X --> H[xyz-to-gaussian.py]
-    K[keywords.txt]:::in --> H
+    K[keywords.txt] --> H
     J --> H
-    H --> C[Gaussian .com files]:::out
-    X -. also usable by .-> TC[TeraChem]:::out
+    H --> C[Gaussian .com files]
+    X -. also usable by .-> TC[TeraChem]
 
-    classDef in fill:#eef,stroke:#88a;
-    classDef mid fill:#efe,stroke:#8a8;
-    classDef out fill:#fee,stroke:#a88;
+    classDef box fill:#ffffff,stroke:#333333,stroke-width:1px,color:#111111;
+    class T,G,J,X,H,K,C,TC box;
 ```
 
 | Stage | Script | In → Out |
