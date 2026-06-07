@@ -4,8 +4,9 @@
 
 **G**enerate **I**nputs for **Q**M/MM systems — in **Py**thon
 
-Turn a molecular-dynamics trajectory into ready-to-run **Gaussian** `.com` inputs
-for monomers, dimers, and aggregates with automatic QM/MM solvent partitioning.
+Turn a molecular-dynamics trajectory into ready-to-run QM/MM inputs for monomers,
+dimers, and aggregates — with automatic QM/MM solvent partitioning — and optionally
+export them as **Gaussian** `.com` files.
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![NumPy](https://img.shields.io/badge/numpy-required-013243?logo=numpy&logoColor=white)
@@ -54,8 +55,8 @@ your QM package. GIQPy automates all of it.
 - 🔌 **Embedding options** — embed the *other* monomers as zero charges or as explicit MM charges.
 - 🎬 **Trajectory-aware** — process one frame or thousands; each frame lands in its own folder.
 - 🏷️ **You name things** — output files are named from labels you choose in the JSON.
-- 🧪 **Two packages, one pipeline** — geometry generation is decoupled from Gaussian formatting,
-  so the `.xyz` files work with TeraChem too.
+- 🧪 **Package-agnostic core** — the primary output is QM/MM `.xyz` files usable with any QM
+  package (e.g. TeraChem); generating **Gaussian** `.com` inputs is an optional second step.
 
 > [!IMPORTANT]
 > **Unique QM solvent per monomer.** When several solute molecules share a solvent shell,
