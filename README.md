@@ -1,9 +1,14 @@
 # GIQPy: Generate Inputs for QM/MM systems
 
+The workflow is split into two scripts:
 
-This is single entry script to generate :
-- `Gaussian`: **.com** files with given set of keywords and proper formatting for a given system configuration.
-- `TeraChem`: **.xyz** files for given system configuration, which can be used paired with **.in** keywords file.
+1. **`giqpy.py`** — turns a trajectory (or single frame) into **.xyz** files: one QM-region file
+   and one MM point-charge file per monomer and for the aggregate. These `.xyz` files can be used
+   directly with `TeraChem` (paired with an `.in` keywords file).
+2. **`xyz_to_gaussian.py`** — converts those `.xyz` files into `Gaussian` **.com** input files
+   (per monomer, the aggregate/dimer, or an EET-analysis dimer) with a given set of keywords.
+
+`run_giqpy.sh` chains both stages together.
 
 ## Overview
 
@@ -20,7 +25,7 @@ This is single entry script to generate :
       - other monomer can be included with zero charges in the MM region
       - other monomer can be included with its specific MM charges in the MM region
   - **Configuring solvent region**: (given a single-frame or multi-frame XYZ file with solute in a solvent)
-    - ***`QM solvent`***: user can pick out a localized QM solvent region by specifying a distance cutoff around each atom of the solute. In case of multiple solute molecules, the code will check for common solvent QM atoms between a given pair of localized QM region, and will assign them to one. This explicitely gives a QM region unique to each solute molecule.
+    - ***`QM solvent`***: user can pick out a localized QM solvent region by specifying a distance cutoff around each atom of the solute. In case of multiple solute molecules, each solvent molecule within the cutoff is assigned to the **single nearest** monomer (by minimum atom-atom distance). This guarantees the QM solvent region is unique to each solute molecule — no solvent atom is ever shared between two monomers.
     - ***`MM solvent`***: user can provide a file with the coordinates of the solvent region, or the code can auto-detect the non-QM solvent and assign charges from the `system_info` JSON.
     - The user can make combinations: no solvent, QM solvent only, MM solvent only, or both QM and MM solvent.
     - This will be executed for each frame in case of a multi-frame trajectory XYZ file.
@@ -34,6 +39,8 @@ This is single entry script to generate :
 
 
 ## Arguments
+
+### `giqpy.py` (XYZ generation)
 `--traj` *(Required)*:
   - ***Number of inputs:*** 1 file
   - Multi-frame trajectory XYZ file. For a single-frame input use `--nFrames 1`.
@@ -68,13 +75,30 @@ This is single entry script to generate :
   - or provide XYZ-like file path of charges
   - omit flag for no MM solvent
 ---
-`--gauss_files` *(Optional)*:
-  - ***Number of inputs:*** 0 or 1 string : `monomer`, `dimer`, `both`
-  - Generates Gaussian `.com` files. Requires `--gauss_keywords` if specified.
+- `--logfile`: (Optional)
+  - ***Number of inputs:*** 0 or 1 string
+  - Name for detailed log file (default `giqpy_run.log`)
+
+### `xyz_to_gaussian.py` (Gaussian .com generation)
+`--indir` *(Optional)*:
+  - ***Number of inputs:*** 1 directory
+  - Directory holding the XYZ files, or a parent containing numbered per-frame subdirectories (default: current directory).
 ---
-`--gauss_keywords` *(Conditionally Required)*:
+`--nDyes` *(Required)*:
+  - ***Number of inputs:*** 1 integer
+  - Number of core monomer units (must match the `giqpy.py` run).
+---
+`--system_info` *(Required)*:
+  - ***Number of inputs:*** 1 file
+  - Same JSON used by `giqpy.py` (provides charge / spin / names).
+---
+`--gauss_keywords` *(Required)*:
   - ***Number of inputs:*** 1 file
   - Plain-text file of Gaussian route section keywords (one per line)
+---
+`--gauss_files` *(Optional)*:
+  - ***Number of inputs:*** 1 string : `monomer`, `dimer`, `both` (default `both`)
+  - Which `.com` files to generate.
 ---
 `--eetg` *(Optional)*:
   - ***Number of inputs:*** 0 (flag)
@@ -86,10 +110,20 @@ This is single entry script to generate :
 ---
 - `--logfile`: (Optional)
   - ***Number of inputs:*** 0 or 1 string
-  - Name for detailed log file (default `run.log`)
+  - Name for detailed log file (default `xyz_to_gaussian.log`)
+
 ## Quick Start
 
-Run `python giqpy.py --traj my_traj.xyz --nFrames 1 --nDyes 2 --system_info examples/cv_dimer_water.json --gauss_files monomer --gauss_keywords examples/keywords.txt` to generate example inputs.
+```bash
+# 1) generate QM-region + MM-charge XYZ files
+python giqpy.py --traj my_traj.xyz --nFrames 1 --nDyes 2 \
+    --system_info examples/cv_dimer_water.json --qmSol_radius 5 --mm_solvent
+
+# 2) build Gaussian .com files from those XYZ files
+python xyz_to_gaussian.py --indir . --nDyes 2 \
+    --system_info examples/cv_dimer_water.json \
+    --gauss_keywords examples/keywords.txt --gauss_files monomer
+```
 
 ---
 
@@ -171,15 +205,17 @@ entry describing the solvent.
 
 
 ## Outputs
-- .com files when `--gauss_files` and `--gauss_keywords` are specified:
-  - monomer `.com` files: `monomer1.com`, `monomer2.com`, etc. : including qm, mm solvent if provided.
-  - dimer `.com` files: `dimer`, etc. : including qm, mm solvent if provided.
-  - EETG file for dimers when `--eetg` is specified.
-
-- XYZ files are always produced for the QM region and MM solvent when present.
+- **`giqpy.py`** (always, per frame; `{term}` is `dimer` for `--nDyes 2`, else `aggregate`):
+  - `{term}_qm.xyz`, `monomer{i}_qm.xyz` : QM-region geometries (core + QM solvent).
+  - `{term}_mm.xyz`, `monomer{i}_mm.xyz` : MM point charges (`charge x y z`), only when MM is requested.
+    The aggregate MM file holds MM solvent only; monomer MM files also include other-monomer embedding.
+- **`xyz_to_gaussian.py`** (from the XYZ files above):
+  - monomer `.com` files: `monomer1.com`, `monomer2.com`, … (suffix `_qm`/`_mm`/`_qm_mm` reflects solvent).
+  - aggregate/dimer `.com` file.
+  - EETG `.com` for dimers when `--eetg` is specified.
 
 - Temporary files (`_current_frame_data.xyz`) are deleted after use when processing trajectories.
-- `run.log` is created in the current working directory.
+- Log files (`giqpy_run.log`, `xyz_to_gaussian.log`) are created in the current working directory.
 
 ---
 
