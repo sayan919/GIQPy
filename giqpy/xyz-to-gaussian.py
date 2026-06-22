@@ -80,7 +80,8 @@ def build_title_base(out_dir: str, term: str, base_system_name: str, n_dyes: int
 
 
 def generate_for_dir(
-    out_dir: str,
+    src_dir: str,
+    dest_dir: str,
     term: str,
     monomers_meta: List[Dict[str, Any]],
     solvent_name: str,
@@ -91,7 +92,10 @@ def generate_for_dir(
     eetg: bool,
     tag_suffix: str,
 ) -> None:
-    """Generate the requested .com files for a single frame directory."""
+    """Generate the requested .com files for a single frame directory.
+
+    XYZ inputs are read from ``src_dir``; .com outputs are written to ``dest_dir``.
+    """
     n_atoms_per_monomer = fn.monomer_atom_counts(monomers_meta)
     monomer_names = [m.get(fn.JSON_KEY_NAME, f'Monomer {i + 1}') for i, m in enumerate(monomers_meta)]
     monomer_labels = fn.system_labels(monomers_meta)  # output names from the JSON 'system' key
@@ -104,18 +108,18 @@ def generate_for_dir(
     total_spin = total_spin if total_spin > 0 else 1
 
     # MM solvent presence is signalled by the aggregate MM file (solvent-only by construction).
-    agg_mm = load_mm(os.path.join(out_dir, f"{term}-mm.xyz"))
+    agg_mm = load_mm(os.path.join(src_dir, f"{term}-mm.xyz"))
     system_has_mm_solvent = agg_mm is not None
 
-    title_base = build_title_base(out_dir, term, base_system_name, n_dyes, n_atoms_per_monomer)
+    title_base = build_title_base(src_dir, term, base_system_name, n_dyes, n_atoms_per_monomer)
 
     # --- EETG dimer input ---
     if eetg:
         if n_dyes != 2:
             fn.write_to_log("EETG requires --num-monomers 2; skipping EETG.", is_warning=True)
         elif gen_aggregate:
-            m1_path = os.path.join(out_dir, f"{monomer_labels[0]}-qm.xyz")
-            m2_path = os.path.join(out_dir, f"{monomer_labels[1]}-qm.xyz")
+            m1_path = os.path.join(src_dir, f"{monomer_labels[0]}-qm.xyz")
+            m2_path = os.path.join(src_dir, f"{monomer_labels[1]}-qm.xyz")
             if not (os.path.exists(m1_path) and os.path.exists(m2_path)):
                 fn.write_to_log("EETG: monomer QM files missing; skipping EETG.", is_warning=True)
             else:
@@ -129,50 +133,50 @@ def generate_for_dir(
                     (m2_atoms, m2_coords, monomers_meta[1][fn.JSON_KEY_CHARGE], monomers_meta[1][fn.JSON_KEY_SPIN_MULT]),
                 ]
                 fn.write_com_file(
-                    os.path.join(out_dir, f"{term}-eetg{suffix}{tag_suffix}.com"),
+                    os.path.join(dest_dir, f"{term}-eetg{suffix}{tag_suffix}.com"),
                     keywords, title, total_charge, total_spin,
                     [], [], mm_charges_list=agg_mm, fragment_definitions=frag_defs,
                 )
-                fn.write_to_log(f"Wrote EETG file in {out_dir}.")
+                fn.write_to_log(f"Wrote EETG file in {dest_dir}.")
         return  # EETG mode generates only the EETG file
 
     # --- Monomer inputs ---
     if gen_monomer:
         for i in range(n_dyes):
             label = monomer_labels[i]
-            qm_path = os.path.join(out_dir, f"{label}-qm.xyz")
+            qm_path = os.path.join(src_dir, f"{label}-qm.xyz")
             if not os.path.exists(qm_path):
-                fn.write_to_log(f"{label}-qm.xyz not found in {out_dir}; skipping.", is_warning=True)
+                fn.write_to_log(f"{label}-qm.xyz not found in {src_dir}; skipping.", is_warning=True)
                 continue
             atoms, coords, _ = fn.read_xyz(qm_path)
             has_qm_sol = len(atoms) > n_atoms_per_monomer[i]
-            mm_charges = load_mm(os.path.join(out_dir, f"{label}-mm.xyz"))
+            mm_charges = load_mm(os.path.join(src_dir, f"{label}-mm.xyz"))
             suffix = fn.get_solvent_descriptor_suffix(has_qm_sol, system_has_mm_solvent)
             title = f"{monomer_names[i]} {label}{fn.get_solvent_title_fragment(has_qm_sol, system_has_mm_solvent, solvent_name)}".strip()
             fn.write_com_file(
-                os.path.join(out_dir, f"{label}{suffix}{tag_suffix}.com"),
+                os.path.join(dest_dir, f"{label}{suffix}{tag_suffix}.com"),
                 keywords, title,
                 monomers_meta[i][fn.JSON_KEY_CHARGE], monomers_meta[i][fn.JSON_KEY_SPIN_MULT],
                 atoms, coords, mm_charges_list=mm_charges,
             )
-            fn.write_to_log(f"Wrote {label}.com in {out_dir}.")
+            fn.write_to_log(f"Wrote {label}.com in {dest_dir}.")
 
     # --- Aggregate input ---
     if gen_aggregate:
-        qm_path = os.path.join(out_dir, f"{term}-qm.xyz")
+        qm_path = os.path.join(src_dir, f"{term}-qm.xyz")
         if not os.path.exists(qm_path):
-            fn.write_to_log(f"{term}-qm.xyz not found in {out_dir}; skipping aggregate.", is_warning=True)
+            fn.write_to_log(f"{term}-qm.xyz not found in {src_dir}; skipping aggregate.", is_warning=True)
         else:
             atoms, coords, _ = fn.read_xyz(qm_path)
             has_qm_sol = len(atoms) > sum(n_atoms_per_monomer)
             suffix = fn.get_solvent_descriptor_suffix(has_qm_sol, system_has_mm_solvent)
             title = f"{title_base}{fn.get_solvent_title_fragment(has_qm_sol, system_has_mm_solvent, solvent_name)}".strip()
             fn.write_com_file(
-                os.path.join(out_dir, f"{term}{suffix}{tag_suffix}.com"),
+                os.path.join(dest_dir, f"{term}{suffix}{tag_suffix}.com"),
                 keywords, title, total_charge, total_spin,
                 atoms, coords, mm_charges_list=agg_mm,
             )
-            fn.write_to_log(f"Wrote {term}.com in {out_dir}.")
+            fn.write_to_log(f"Wrote {term}.com in {dest_dir}.")
 
 
 def main() -> None:
@@ -182,6 +186,8 @@ def main() -> None:
     )
     parser.add_argument('--input-dir', type=str, default=os.getcwd(),
                         help='Directory with the XYZ files, or a parent of numbered frame subdirectories (default: cwd).')
+    parser.add_argument('--output-dir', type=str, default=None,
+                        help='Directory to write the .com files into, mirroring frame subdirs (default: same as --input-dir).')
     parser.add_argument('--num-monomers', type=int, required=True, help='Number of core monomer units.')
     parser.add_argument('--system-info', type=str, required=True,
                         help='JSON file with monomer and solvent metadata (provides charge/spin/names).')
@@ -236,15 +242,29 @@ def main() -> None:
         fn.write_to_log(err, is_error=True)
         sys.exit(1)
 
+    output_base = args.output_dir if args.output_dir is not None else args.input_dir
+
     total = len(frame_dirs)
-    for idx, out_dir in enumerate(frame_dirs):
-        print(f"[{idx + 1}/{total}] Writing .com files in {out_dir}")
-        fn.write_to_log(f"\n\n--- Frame dir {idx + 1}/{total}: {out_dir} ---")
+    for idx, src_dir in enumerate(frame_dirs):
+        # Mirror the per-frame subdirectory structure in the output directory.
+        if os.path.abspath(src_dir) == os.path.abspath(args.input_dir):
+            dest_dir = output_base
+        else:
+            dest_dir = os.path.join(output_base, os.path.basename(os.path.normpath(src_dir)))
         try:
-            generate_for_dir(out_dir, term, monomers_meta, solvent_name, args.num_monomers,
+            os.makedirs(dest_dir, exist_ok=True)
+        except OSError as e:
+            err = f"Could not create output directory {dest_dir}: {e}"
+            print(f"\nERROR: {err}", file=sys.stderr)
+            fn.write_to_log(err, is_error=True)
+            continue
+        print(f"[{idx + 1}/{total}] Writing .com files in {dest_dir}")
+        fn.write_to_log(f"\n\n--- Frame dir {idx + 1}/{total}: {src_dir} -> {dest_dir} ---")
+        try:
+            generate_for_dir(src_dir, dest_dir, term, monomers_meta, solvent_name, args.num_monomers,
                              keywords, gen_monomer, gen_aggregate, args.eetg, tag_suffix)
         except Exception as e:
-            err = f"Error generating .com files in {out_dir}: {e}"
+            err = f"Error generating .com files in {dest_dir}: {e}"
             print(f"\nERROR: {err}", file=sys.stderr)
             fn.write_to_log(err, is_error=True)
             continue

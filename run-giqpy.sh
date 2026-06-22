@@ -29,24 +29,28 @@
 #   --log-file       : Log file name (default: xyz-to-gaussian.log).
 #=================================================================================================
 
-giqpy='path_to/giqpy.py'
-xyz2gauss='path_to/xyz-to-gaussian.py'
+giqpy='giqpy/giqpy.py'
+xyz2gauss='giqpy/xyz-to-gaussian.py'
 system_json='path_to_system_json'
 keywords='path_to_keywords'
 traj=$1
 
-# Stage 1: generate QM / MM XYZ files
+outdir='giqpy-outputs'
+
+# Stage 1: generate QM / MM XYZ files into giqpy-outputs/coordinates
 python3 "$giqpy" \
     --traj "$traj" \
     --num-frames 20 \
     --num-monomers 2 \
     --qm-radius 5 \
     --system-info "$system_json" \
-    --mm-solvent
+    --mm-solvent \
+    --output-dir "$outdir/coordinates"
 
-# Stage 2: build Gaussian .com inputs from the XYZ files
+# Stage 2: build Gaussian .com inputs into giqpy-outputs/gaussian-inputs (reads from giqpy-outputs/coordinates)
 python3 "$xyz2gauss" \
-    --input-dir . \
+    --input-dir "$outdir/coordinates" \
+    --output-dir "$outdir/gaussian-inputs" \
     --num-monomers 2 \
     --system-info "$system_json" \
     --gauss-keywords "$keywords" \

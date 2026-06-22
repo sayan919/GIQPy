@@ -151,6 +151,8 @@ def main() -> None:
                         help="MM embedding for other monomers: '0' for zero charges, or one charge file per monomer.")
     parser.add_argument('--mm-solvent', type=str, nargs='?', const=fn.AUTO_MM_SOLVENT_TRIGGER, default=None,
                         help='MM solvent: XYZ-like charge file, or flag alone to auto-detect from non-QM solvent.')
+    parser.add_argument('--output-dir', type=str, default=os.getcwd(),
+                        help='Directory to write per-frame output files into (default: cwd).')
     parser.add_argument('--log-file', type=str, default="giqpy-run.log",
                         help='Log file name (default: giqpy-run.log).')
     args = parser.parse_args()
@@ -171,7 +173,14 @@ def main() -> None:
         fn.write_to_log(err, is_error=True)
         parser.error(err)
 
-    base_output_dir = os.getcwd()
+    base_output_dir = args.output_dir
+    try:
+        os.makedirs(base_output_dir, exist_ok=True)
+    except OSError as e:
+        err = f"Could not create output directory {base_output_dir}: {e}"
+        print(f"CRITICAL ERROR: {err}", file=sys.stderr)
+        fn.write_to_log(err, is_error=True)
+        sys.exit(1)
     combined_system_term = "dimer" if args.num_monomers == 2 else "aggregate"
 
     # --- Load metadata once (was previously re-parsed every frame) ---
