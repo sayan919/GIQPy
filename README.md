@@ -209,22 +209,26 @@ Provide **N** files when `--num-monomers N`; each monomer is then embedded in th
 ## Output files
 
 Each stage writes into its own `--output-dir`, and every frame gets its own numbered subfolder
-(`1/`, `2/`, … for trajectories). `{term}` is **`dimer`** when `--num-monomers 2`, otherwise
-**`aggregate`**; `{system}` is your JSON `system` label. Using the separated layout from *Quick start*:
+(`1/`, `2/`, … for trajectories). The **aggregate** files are named `{agg}` =
+**`{name}-{dimer|trimer|…}`**, where `{name}` is the monomer `name` from the JSON — used once if all
+monomers share it, otherwise every monomer's name joined by `-` in JSON order (e.g. `cv-dimer`,
+`cv-bod-dimer`, `cv-trimer`). The **per-monomer** files use `{system}`, your JSON `system` label
+(`m1`, `m2`, …). The example below assumes two monomers both named `cv` and the separated layout
+from *Quick start*:
 
 ```text
 giqpy-outputs/
-├── coordinates/                # ← giqpy.py (Stage 1)
+├── coordinates/                  # ← giqpy.py (Stage 1)
 │   └── 1/
-│       ├── dimer-qm.xyz        # aggregate QM region  (all cores + all QM solvent)
-│       ├── m1-qm.xyz           # monomer QM region    (core + its UNIQUE QM solvent)
+│       ├── cv-dimer-qm.xyz       # aggregate QM region  (all cores + all QM solvent)
+│       ├── m1-qm.xyz             # monomer QM region    (core + its UNIQUE QM solvent)
 │       ├── m2-qm.xyz
-│       ├── dimer-mm.xyz        # aggregate MM charges (MM solvent only)        ┐ only when
-│       ├── m1-mm.xyz           # monomer MM charges   (embedding + MM solvent) │ MM is
-│       └── m2-mm.xyz           #                                               ┘ requested
-└── gaussian-inputs/            # ← xyz-to-gaussian.py (Stage 2)
+│       ├── cv-dimer-mm.xyz       # aggregate MM charges (MM solvent only)        ┐ only when
+│       ├── m1-mm.xyz             # monomer MM charges   (embedding + MM solvent) │ MM is
+│       └── m2-mm.xyz             #                                               ┘ requested
+└── gaussian-inputs/              # ← xyz-to-gaussian.py (Stage 2)
     └── 1/
-        ├── dimer-qm-mm.com     # Gaussian inputs (suffix reflects QM/MM solvent)
+        ├── cv-dimer-qm-mm.com    # Gaussian inputs (suffix reflects QM/MM solvent)
         ├── m1-qm-mm.com
         └── m2-qm-mm.com
 ```
@@ -234,15 +238,15 @@ of `gaussian-inputs/`. (Without `--output-dir`, the `.com` files are written nex
 
 | Producer | File | Contents |
 |----------|------|----------|
-| `giqpy.py` | `{term}-qm.xyz` | Aggregate QM region (cores + all QM solvent). |
+| `giqpy.py` | `{agg}-qm.xyz` | Aggregate QM region (cores + all QM solvent). |
 | `giqpy.py` | `{system}-qm.xyz` | One monomer's QM region (core + its unique QM solvent). |
-| `giqpy.py` | `{term}-mm.xyz` | Aggregate MM charges — **MM solvent only**. |
+| `giqpy.py` | `{agg}-mm.xyz` | Aggregate MM charges — **MM solvent only**. |
 | `giqpy.py` | `{system}-mm.xyz` | Monomer MM charges — other-monomer embedding **+** MM solvent. |
 | `xyz-to-gaussian.py` | `{system}{suffix}.com` | Per-monomer Gaussian input. |
-| `xyz-to-gaussian.py` | `{term}{suffix}.com` | Aggregate/dimer Gaussian input. |
-| `xyz-to-gaussian.py` | `{term}-eetg{suffix}.com` | EET-analysis dimer input (`--eetg`). |
+| `xyz-to-gaussian.py` | `{agg}{suffix}.com` | Aggregate (dimer/trimer/…) Gaussian input. |
+| `xyz-to-gaussian.py` | `{agg}-eetg{suffix}.com` | EET-analysis dimer input (`--eetg`). |
 
-The `{suffix}` encodes the solvent treatment: `-qm`, `-mm`, `-qm-mm`, or nothing.
+`{agg}` is `{name}-{dimer\|trimer\|…}` as described above. The `{suffix}` encodes the solvent treatment: `-qm`, `-mm`, `-qm-mm`, or nothing.
 MM `.xyz` files store `charge x y z` (not `element x y z`); their header line says so.
 
 ---

@@ -6,10 +6,11 @@
 Convert GIQPy XYZ output into Gaussian .com input files.
 
 Reads the per-frame XYZ files produced by giqpy.py:
-    {term}-qm.xyz, {system}-qm.xyz   : QM geometries
-    {term}-mm.xyz, {system}-mm.xyz   : MM point charges ("charge x y z")
-and writes the corresponding Gaussian .com files. ({term} is "dimer" for --num-monomers 2,
-otherwise "aggregate"; {system} is the per-monomer label from the JSON "system" key.)
+    {agg}-qm.xyz, {system}-qm.xyz   : QM geometries
+    {agg}-mm.xyz, {system}-mm.xyz   : MM point charges ("charge x y z")
+and writes the corresponding Gaussian .com files. ({agg} is the aggregate base name
+"{name}-{dimer|trimer|...}" built from the JSON monomer "name"s; {system} is the per-monomer
+label from the JSON "system" key.)
 
 Flags:
     --input-dir     (Optional) : Directory holding the XYZ files, or a parent containing numbered
@@ -64,12 +65,16 @@ def load_mm(path: str) -> Optional[List[fn.MMChargeTupleType]]:
     return None
 
 
-def build_title_base(out_dir: str, term: str, base_system_name: str, n_dyes: int,
+def build_title_base(out_dir: str, agg_base: str, term: str, base_system_name: str, n_dyes: int,
                      n_atoms_per_monomer: List[int]) -> str:
-    """Reconstruct the aggregate title base, including the m1-m2 centroid distance when available."""
+    """Reconstruct the aggregate title base, including the m1-m2 centroid distance when available.
+
+    ``agg_base`` is the aggregate file base (e.g. 'cv-dimer') used to locate the QM file;
+    ``term`` is the multiplicity word (e.g. 'dimer') shown in the title text.
+    """
     distance_str = ""
     if n_dyes >= 2:
-        agg_qm = os.path.join(out_dir, f"{term}-qm.xyz")
+        agg_qm = os.path.join(out_dir, f"{agg_base}-qm.xyz")
         if os.path.exists(agg_qm):
             _, coords, _ = fn.read_xyz(agg_qm)
             total_core = sum(n_atoms_per_monomer)
@@ -83,6 +88,7 @@ def generate_for_dir(
     src_dir: str,
     dest_dir: str,
     term: str,
+    agg_base: str,
     monomers_meta: List[Dict[str, Any]],
     solvent_name: str,
     n_dyes: int,
@@ -108,10 +114,10 @@ def generate_for_dir(
     total_spin = total_spin if total_spin > 0 else 1
 
     # MM solvent presence is signalled by the aggregate MM file (solvent-only by construction).
-    agg_mm = load_mm(os.path.join(src_dir, f"{term}-mm.xyz"))
+    agg_mm = load_mm(os.path.join(src_dir, f"{agg_base}-mm.xyz"))
     system_has_mm_solvent = agg_mm is not None
 
-    title_base = build_title_base(src_dir, term, base_system_name, n_dyes, n_atoms_per_monomer)
+    title_base = build_title_base(src_dir, agg_base, term, base_system_name, n_dyes, n_atoms_per_monomer)
 
     # --- EETG dimer input ---
     if eetg:
@@ -133,7 +139,7 @@ def generate_for_dir(
                     (m2_atoms, m2_coords, monomers_meta[1][fn.JSON_KEY_CHARGE], monomers_meta[1][fn.JSON_KEY_SPIN_MULT]),
                 ]
                 fn.write_com_file(
-                    os.path.join(dest_dir, f"{term}-eetg{suffix}{tag_suffix}.com"),
+                    os.path.join(dest_dir, f"{agg_base}-eetg{suffix}{tag_suffix}.com"),
                     keywords, title, total_charge, total_spin,
                     [], [], mm_charges_list=agg_mm, fragment_definitions=frag_defs,
                 )
@@ -163,20 +169,20 @@ def generate_for_dir(
 
     # --- Aggregate input ---
     if gen_aggregate:
-        qm_path = os.path.join(src_dir, f"{term}-qm.xyz")
+        qm_path = os.path.join(src_dir, f"{agg_base}-qm.xyz")
         if not os.path.exists(qm_path):
-            fn.write_to_log(f"{term}-qm.xyz not found in {src_dir}; skipping aggregate.", is_warning=True)
+            fn.write_to_log(f"{agg_base}-qm.xyz not found in {src_dir}; skipping aggregate.", is_warning=True)
         else:
             atoms, coords, _ = fn.read_xyz(qm_path)
             has_qm_sol = len(atoms) > sum(n_atoms_per_monomer)
             suffix = fn.get_solvent_descriptor_suffix(has_qm_sol, system_has_mm_solvent)
             title = f"{title_base}{fn.get_solvent_title_fragment(has_qm_sol, system_has_mm_solvent, solvent_name)}".strip()
             fn.write_com_file(
-                os.path.join(dest_dir, f"{term}{suffix}{tag_suffix}.com"),
+                os.path.join(dest_dir, f"{agg_base}{suffix}{tag_suffix}.com"),
                 keywords, title, total_charge, total_spin,
                 atoms, coords, mm_charges_list=agg_mm,
             )
-            fn.write_to_log(f"Wrote {term}.com in {dest_dir}.")
+            fn.write_to_log(f"Wrote {agg_base}.com in {dest_dir}.")
 
 
 def main() -> None:
@@ -230,12 +236,13 @@ def main() -> None:
         sys.exit(1)
     solvent_name = solvent_meta.get(fn.JSON_KEY_NAME, "solvent")
 
-    term = "dimer" if args.num_monomers == 2 else "aggregate"
+    term = fn.multiplicity_word(args.num_monomers)
+    agg_base = fn.aggregate_basename(monomers_meta, args.num_monomers)  # e.g. 'cv-dimer'
     gen_monomer = args.com_files in ('monomer', 'both')
     gen_aggregate = args.com_files in ('dimer', 'both')
     tag_suffix = f"-{args.tag}" if args.tag else ""
 
-    frame_dirs = find_frame_dirs(args.input_dir, term)
+    frame_dirs = find_frame_dirs(args.input_dir, agg_base)
     if not frame_dirs:
         err = f"No GIQPy XYZ files found under '{args.input_dir}'. Run giqpy.py first."
         print(f"ERROR: {err}", file=sys.stderr)
@@ -261,7 +268,7 @@ def main() -> None:
         print(f"[{idx + 1}/{total}] Writing .com files in {dest_dir}")
         fn.write_to_log(f"\n\n--- Frame dir {idx + 1}/{total}: {src_dir} -> {dest_dir} ---")
         try:
-            generate_for_dir(src_dir, dest_dir, term, monomers_meta, solvent_name, args.num_monomers,
+            generate_for_dir(src_dir, dest_dir, term, agg_base, monomers_meta, solvent_name, args.num_monomers,
                              keywords, gen_monomer, gen_aggregate, args.eetg, tag_suffix)
         except Exception as e:
             err = f"Error generating .com files in {dest_dir}: {e}"

@@ -9,12 +9,13 @@ This script handles geometry only. To turn the resulting XYZ files into Gaussian
 run xyz_to_gaussian.py afterwards (see run_giqpy.sh).
 
 Per frame it writes (into the frame's output directory):
-    {term}-qm.xyz        : aggregate QM region   (core + all QM solvent)
+    {agg}-qm.xyz         : aggregate QM region   (core + all QM solvent)
     {system}-qm.xyz      : monomer QM region     (core + its UNIQUE QM solvent)
-    {term}-mm.xyz        : aggregate MM charges  (MM solvent only)            [if MM requested]
+    {agg}-mm.xyz         : aggregate MM charges  (MM solvent only)            [if MM requested]
     {system}-mm.xyz      : monomer MM charges    (other-monomer embedding + MM solvent) [if requested]
-where {term} is "dimer" for --num-monomers 2 and "aggregate" otherwise, and {system} is the per-monomer
-label from the JSON "system" key (e.g. m1, m2).
+where {agg} is "{name}-{dimer|trimer|...}" built from the JSON monomer "name"s (used once if all
+monomers share it, else joined by '-' in JSON order), and {system} is the per-monomer label from
+the JSON "system" key (e.g. m1, m2).
 
 Flags:
     --traj          (Required) : Multi-frame trajectory XYZ file (use --num-frames 1 for a single frame).
@@ -181,7 +182,7 @@ def main() -> None:
         print(f"CRITICAL ERROR: {err}", file=sys.stderr)
         fn.write_to_log(err, is_error=True)
         sys.exit(1)
-    combined_system_term = "dimer" if args.num_monomers == 2 else "aggregate"
+    combined_system_term = fn.multiplicity_word(args.num_monomers)
 
     # --- Load metadata once (was previously re-parsed every frame) ---
     try:
@@ -207,6 +208,8 @@ def main() -> None:
         base_system_name = monomer_names[0]
     else:
         base_system_name = "_".join(monomer_names)
+    # Aggregate file base, e.g. 'cv-dimer' / 'cv-bodipy-trimer' (names from JSON, '-' joined).
+    aggregate_file_base = fn.aggregate_basename(monomers_meta, args.num_monomers)
 
     for frame_idx, (frame_id, temp_xyz_path, out_dir) in enumerate(frames):
         print(f"[{frame_idx + 1}/{total}] Processing frame {frame_id} -> {out_dir}")
@@ -238,7 +241,7 @@ def main() -> None:
         # --- QM region XYZ files ---
         agg_qm_atoms, agg_qm_coords = aggregate_qm_region
         agg_qm_sol = " + qm " + solvent_name if qm_solvent_flags.get('aggregate_has_added_qm_solvent') else ""
-        fn.write_xyz(os.path.join(out_dir, f'{combined_system_term}-qm.xyz'),
+        fn.write_xyz(os.path.join(out_dir, f'{aggregate_file_base}-qm.xyz'),
                      agg_qm_atoms, agg_qm_coords, comment=f"{comment_base} qm{agg_qm_sol}")
 
         for i, (mono_atoms, mono_coords) in enumerate(monomer_qm_regions):
@@ -251,7 +254,7 @@ def main() -> None:
         # --- MM charge XYZ files ---
         # Aggregate: MM solvent only.
         if mm_solvent_charges:
-            write_mm_xyz(os.path.join(out_dir, f'{combined_system_term}-mm.xyz'),
+            write_mm_xyz(os.path.join(out_dir, f'{aggregate_file_base}-mm.xyz'),
                          mm_solvent_charges,
                          comment=f"mm {solvent_name} for {base_system_name} {combined_system_term}")
             fn.write_to_log(f"Wrote aggregate MM charges ({len(mm_solvent_charges)} solvent point charges).")

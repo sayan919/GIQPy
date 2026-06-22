@@ -164,6 +164,34 @@ def system_labels(monomers_meta: List[Dict[str, Any]]) -> List[str]:
     return [m.get(JSON_KEY_SYSTEM, f"monomer{i + 1}") for i, m in enumerate(monomers_meta)]
 
 
+MULTIPLICITY_WORDS: Dict[int, str] = {
+    1: "monomer", 2: "dimer", 3: "trimer", 4: "tetramer", 5: "pentamer",
+    6: "hexamer", 7: "heptamer", 8: "octamer", 9: "nonamer", 10: "decamer",
+}
+
+
+def multiplicity_word(num_monomers: int) -> str:
+    """Aggregate multiplicity term: 2 -> 'dimer', 3 -> 'trimer', ...; falls back to '<n>-mer'."""
+    return MULTIPLICITY_WORDS.get(num_monomers, f"{num_monomers}-mer")
+
+
+def aggregate_name_prefix(monomers_meta: List[Dict[str, Any]]) -> str:
+    """Name part of the aggregate filename, taken from each monomer's JSON 'name'.
+
+    If every monomer shares the same name, it is used once; otherwise the names are
+    joined with '-' in the order they appear in the JSON.
+    """
+    names = [m.get(JSON_KEY_NAME, f"m{i + 1}") for i, m in enumerate(monomers_meta)]
+    if len(set(names)) == 1:
+        return names[0]
+    return "-".join(names)
+
+
+def aggregate_basename(monomers_meta: List[Dict[str, Any]], num_monomers: int) -> str:
+    """Aggregate file base name, e.g. 'cv-dimer' or 'cv-bodipy-trimer'."""
+    return f"{aggregate_name_prefix(monomers_meta)}-{multiplicity_word(num_monomers)}"
+
+
 def monomer_atom_counts(monomers_meta: List[Dict[str, Any]]) -> List[int]:
     """
     Number of core atoms per monomer, taken from each entry's bounded 'index' spec
