@@ -47,27 +47,17 @@ your QM package. GIQPy automates all of it.
 
 GIQPy is a two-stage pipeline. Stage 1 is geometry; stage 2 is QM-package formatting.
 
-```mermaid
-flowchart LR
-    T[Trajectory XYZ] --> G[giqpy.py]
-    J[system_info.json] --> G
-    G --> X["QM-region .xyz<br/>+ MM-charge .xyz<br/>(per frame)"]
-    X --> H[xyz-to-gaussian.py]
-    K[keywords.txt] --> H
-    J --> H
-    H --> C[Gaussian .com files]
-    X -. also usable by .-> TC[TeraChem]
-
-    classDef box fill:#ffffff,stroke:#333333,stroke-width:1px,color:#111111;
-    class T,G,J,X,H,K,C,TC box;
-```
+<div align="center">
+  <img src="docs/giqpy-pipeline.svg" alt="GIQPy two-stage workflow: Trajectory XYZ and system_info.json feed giqpy.py (Stage 1), which writes coordinates/ (QM + MM .xyz); those plus keywords.txt and system_info.json feed xyz-to-gaussian.py (Stage 2), which writes gaussian-inputs/ (.com). The coordinates are also usable by TeraChem and other QM packages." width="860">
+</div>
 
 | Stage | Script | In → Out |
 |------:|--------|----------|
 | **1** | `giqpy.py` | trajectory `.xyz` + `system_info.json` → per-frame QM-region & MM-charge `.xyz` files |
 | **2** | `xyz-to-gaussian.py` | those `.xyz` files + `keywords.txt` → Gaussian `.com` inputs |
 
-`run-giqpy.sh` is a thin wrapper that runs both stages back-to-back.
+`run-giqpy.sh` is a thin wrapper that runs both stages back-to-back, writing the two stages into
+separate folders (`giqpy-outputs/coordinates/` and `giqpy-outputs/gaussian-inputs/`).
 
 ---
 
@@ -88,18 +78,23 @@ pip install numpy        # the only third-party dependency
 ## Quick start
 
 ```bash
-# Stage 1 — generate QM-region + MM-charge XYZ files
-python giqpy.py \
+# Stage 1 — QM-region + MM-charge XYZ files → giqpy-outputs/coordinates/
+python giqpy/giqpy.py \
     --traj my_traj.xyz --num-frames 1 --num-monomers 2 \
     --system-info examples/cv_dimer_water.json \
-    --qm-radius 5 --mm-solvent
+    --qm-radius 5 --mm-solvent \
+    --output-dir giqpy-outputs/coordinates
 
-# Stage 2 — build Gaussian .com files from those XYZ files
-python xyz-to-gaussian.py \
-    --input-dir . --num-monomers 2 \
+# Stage 2 — Gaussian .com files → giqpy-outputs/gaussian-inputs/
+python giqpy/xyz-to-gaussian.py \
+    --input-dir giqpy-outputs/coordinates --num-monomers 2 \
     --system-info examples/cv_dimer_water.json \
-    --gauss-keywords examples/keywords.txt --com-files both
+    --gauss-keywords examples/keywords.txt --com-files both \
+    --output-dir giqpy-outputs/gaussian-inputs
 ```
+
+> 🗂️ `--output-dir` is optional. Omit it and Stage 1 writes to the current directory while Stage 2
+> writes alongside its input — handy for quick one-offs, but the separated layout above keeps things tidy.
 
 > 💡 **Single frame?** Pass `--num-frames 1`. **Whole trajectory?** Omit `--num-frames`.
 
@@ -213,21 +208,29 @@ Provide **N** files when `--num-monomers N`; each monomer is then embedded in th
 
 ## Output files
 
-Everything for a frame lands in that frame's folder (`1/`, `2/`, … for trajectories).
-`{term}` is **`dimer`** when `--num-monomers 2`, otherwise **`aggregate`**; `{system}` is your JSON `system` label.
+Each stage writes into its own `--output-dir`, and every frame gets its own numbered subfolder
+(`1/`, `2/`, … for trajectories). `{term}` is **`dimer`** when `--num-monomers 2`, otherwise
+**`aggregate`**; `{system}` is your JSON `system` label. Using the separated layout from *Quick start*:
 
 ```text
-./1/
-├── dimer-qm.xyz          # aggregate QM region  (all cores + all QM solvent)
-├── m1-qm.xyz             # monomer QM region    (core + its UNIQUE QM solvent)
-├── m2-qm.xyz
-├── dimer-mm.xyz          # aggregate MM charges (MM solvent only)        ┐ only when
-├── m1-mm.xyz             # monomer MM charges   (embedding + MM solvent) │ MM is
-├── m2-mm.xyz             #                                               ┘ requested
-├── dimer-qm-mm.com       # Gaussian inputs (suffix reflects QM/MM solvent)
-├── m1-qm-mm.com
-└── m2-qm-mm.com
+giqpy-outputs/
+├── coordinates/                # ← giqpy.py (Stage 1)
+│   └── 1/
+│       ├── dimer-qm.xyz        # aggregate QM region  (all cores + all QM solvent)
+│       ├── m1-qm.xyz           # monomer QM region    (core + its UNIQUE QM solvent)
+│       ├── m2-qm.xyz
+│       ├── dimer-mm.xyz        # aggregate MM charges (MM solvent only)        ┐ only when
+│       ├── m1-mm.xyz           # monomer MM charges   (embedding + MM solvent) │ MM is
+│       └── m2-mm.xyz           #                                               ┘ requested
+└── gaussian-inputs/            # ← xyz-to-gaussian.py (Stage 2)
+    └── 1/
+        ├── dimer-qm-mm.com     # Gaussian inputs (suffix reflects QM/MM solvent)
+        ├── m1-qm-mm.com
+        └── m2-qm-mm.com
 ```
+
+Stage 2 mirrors the per-frame subfolder names, so frame `1/` of `coordinates/` maps to frame `1/`
+of `gaussian-inputs/`. (Without `--output-dir`, the `.com` files are written next to the `.xyz` files instead.)
 
 | Producer | File | Contents |
 |----------|------|----------|
@@ -257,6 +260,7 @@ MM `.xyz` files store `charge x y z` (not `element x y z`); their header line sa
 | `--qm-radius` | — | `5.0` | QM-solvent shell radius (Å). **Negative disables QM solvent.** |
 | `--mm-monomer` | — | off | `0` = embed other monomers as zero charges; or one charge file per monomer. |
 | `--mm-solvent` | — | off | Flag alone = auto-charge non-QM solvent from JSON; or a path to a charge file. |
+| `--output-dir` | — | `.` (cwd) | Folder for the per-frame output; created if missing. |
 | `--log-file` | — | `giqpy-run.log` | Log file name. |
 
 ### `xyz-to-gaussian.py` — XYZ files → Gaussian `.com`
@@ -267,6 +271,7 @@ MM `.xyz` files store `charge x y z` (not `element x y z`); their header line sa
 | `--system-info` | ✅ | — | Same JSON (provides charge / spin / names). |
 | `--gauss-keywords` | ✅ | — | Gaussian route-section keywords file. |
 | `--input-dir` | — | `.` | Folder with the XYZ files, or a parent of numbered frame folders. |
+| `--output-dir` | — | = `--input-dir` | Folder for the `.com` files; mirrors the per-frame subfolders. Created if missing. |
 | `--com-files` | — | `both` | Which inputs: `monomer`, `dimer`, or `both`. |
 | `--eetg` | — | off | Generate **only** the EETG dimer input (requires `--num-monomers 2`). |
 | `--tag` | — | — | Custom tag appended to `.com` filenames (e.g. `m1-qm-mm-TAG.com`). |
