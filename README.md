@@ -25,14 +25,14 @@ your QM package. GIQPy automates all of it.
 
 **Highlights**
 
-- 🧩 **Monomers, dimers & aggregates** — generate isolated-monomer, full-aggregate, and
+- **Monomers, dimers & aggregates** — generate isolated-monomer, full-aggregate, and
   EET-analysis (EETG) inputs from the same trajectory.
-- 💧 **QM/MM solvent partitioning** — pick a QM solvent shell by radius; treat the rest as MM point charges (or auto-detect them).
-- 🎯 **Guaranteed-unique QM solvent** *(see callout below)*.
-- 🔌 **Embedding options** — embed the *other* monomers as zero charges or as explicit MM charges.
-- 🎬 **Trajectory-aware** — process one frame or thousands; each frame lands in its own folder.
-- 🏷️ **You name things** — output files are named from labels you choose in the JSON.
-- 🧪 **Package-agnostic core** — the primary output is QM/MM `.xyz` files usable with any QM
+- **QM/MM solvent partitioning** — pick a QM solvent shell by radius; treat the rest as MM point charges (or auto-detect them).
+- **Guaranteed-unique QM solvent** *(see callout below)*.
+- **Embedding options** — embed the *other* monomers as zero charges or as explicit MM charges.
+- **Trajectory-aware** — process one frame or thousands; each frame lands in its own folder.
+- **You name things** — output files are named from labels you choose in the JSON.
+- **Package-agnostic core** — the primary output is QM/MM `.xyz` files usable with any QM
   package (e.g. TeraChem); generating **Gaussian** `.com` inputs is an optional second step.
 
 > [!IMPORTANT]
