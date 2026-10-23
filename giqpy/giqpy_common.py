@@ -497,7 +497,8 @@ def localize_solvent_and_prepare_regions(
     monomers_meta: List[Dict[str, Any]],
     solvent_meta: Dict[str, Any],
     qm_radius: float,
-) -> Tuple[List[SolventGroupType], SolventGroupType, List[SolventGroupType], Dict[str, bool], CoordType, List[int]]:
+) -> Tuple[List[SolventGroupType], SolventGroupType, List[SolventGroupType], Dict[str, bool],
+           AtomListType, CoordType, List[int]]:
     """
     Read the input XYZ and partition QM solvent into per-monomer and aggregate regions.
 
@@ -511,7 +512,8 @@ def localize_solvent_and_prepare_regions(
         aggregate_qm_region   : (atoms, coords) for the full aggregate (core + all QM solvent)
         non_qm_solvent_groups : solvent molecules outside the QM shell
         qm_solvent_flags      : booleans 'monomer_i_has_added_qm_solvent' / 'aggregate_has_added_qm_solvent'
-        core_coords           : (Ncore, 3) core coordinates (used for centroid distances)
+        core_atoms            : core element symbols, monomer by monomer
+        core_coords           : (Ncore, 3) core coordinates (centroid distances, MM monomer embedding)
         n_atoms_per_monomer   : per-monomer core atom counts
     """
     atoms_all, coords_all, _ = read_xyz(main_xyz_input_filepath)
@@ -568,7 +570,7 @@ def localize_solvent_and_prepare_regions(
     qm_solvent_flags['aggregate_has_added_qm_solvent'] = bool(agg_sol_atoms)
 
     return (monomer_qm_regions, aggregate_qm_region, non_qm_solvent_groups,
-            qm_solvent_flags, core_coords, n_atoms_per_monomer_list)
+            qm_solvent_flags, core_atoms, core_coords, n_atoms_per_monomer_list)
 
 
 def read_charge_file(path: str, skip_header: int = 0) -> List[MMChargeTupleType]:
@@ -606,9 +608,31 @@ def read_charge_file(path: str, skip_header: int = 0) -> List[MMChargeTupleType]
     return charges_data
 
 
-def load_monomer_charges_from_file(charge_file_path: str) -> List[MMChargeTupleType]:
-    """Load MM monomer-embedding charges (format: 'charge x y z', no header)."""
-    return read_charge_file(charge_file_path, skip_header=0)
+def read_monomer_charge_file(path: str) -> Tuple[AtomListType, ChargeListType]:
+    """
+    Read an MM monomer-embedding charge file: two columns 'element charge', no header,
+    one row per monomer atom in trajectory order. Coordinates are NOT read from this file;
+    they come from each trajectory frame.
+    Returns (elements, charges).
+    """
+    elements: AtomListType = []
+    charges: ChargeListType = []
+    with open(path, 'r') as f:
+        for line_num, line_content in enumerate(f, start=1):
+            parts = line_content.split()
+            if not parts:
+                continue
+            if len(parts) != 2:
+                raise ValueError(f"Malformed line in charge file {path} on line {line_num} "
+                                 f"(expected 2 columns 'element charge', got {len(parts)}): {line_content.strip()}")
+            try:
+                charges.append(float(parts[1]))
+            except ValueError:
+                raise ValueError(f"Non-numeric charge in {path} on line {line_num}: {line_content.strip()}")
+            elements.append(parts[0])
+    if not charges:
+        raise ValueError(f"No charges found in charge file {path}.")
+    return elements, charges
 
 
 def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], solvent_metadata_entry: Dict[str, Any]) -> List[MMChargeTupleType]:

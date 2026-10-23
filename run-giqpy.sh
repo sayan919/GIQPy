@@ -14,7 +14,8 @@
 #   --num-monomers  : Number of core monomer units.
 #   --system-info   : Single JSON defining all monomers and the solvent.
 #   --qm-radius     : QM solvent shell radius (Å) around core atoms (default 5.0; negative disables).
-#   --mm-monomer    : '0' for zero charges at other monomers, or one charge file per monomer.
+#   --mm-monomer    : '0' for zero charges at other monomers, or one '{system}.chg' file per monomer
+#                     ('element charge' columns; positions taken from the trajectory).
 #   --mm-solvent    : flag alone = non-QM solvent from system_info; or path to an XYZ-like charge file.
 #   --log-file      : Log file name (default: giqpy-run.log).
 #

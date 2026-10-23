@@ -192,12 +192,17 @@ Plain text, one route-section line per blank-stripped line:
 <details>
 <summary><b>Formats for <code>--mm-monomer</code> and a file-based <code>--mm-solvent</code></b></summary>
 
-**Inter-monomer charges (`--mm-monomer file1 file2 …`)** — four columns `charge x y z`, no header.
-Provide **N** files when `--num-monomers N`; each monomer is then embedded in the charges of all the others.
+**Inter-monomer charges (`--mm-monomer file1 file2 …`)** — two columns `element charge`, no header,
+one row per monomer atom in the same order as the trajectory. Provide **N** files when
+`--num-monomers N`, each named **`{system}.chg`** after a JSON `system` label (e.g. `cv-A.chg`,
+`cv-B.chg`; order on the command line does not matter). Each monomer is then embedded in the charges
+of all the others. The files carry charges only: positions are always the monomer's atoms in the
+current trajectory frame. GIQPy stops with an error if a file name, the atom count or any element
+does not match.
 
 ```text
--0.123   1.234   0.456   -2.345
- 0.417   2.345   1.567    0.890
+N   -0.882961
+C    0.537524
 …
 ```
 
@@ -262,7 +267,7 @@ MM `.xyz` files store `charge x y z` (not `element x y z`); their header line sa
 | `--system-info` | ✅ | — | `system_info.json` (monomer + solvent metadata). |
 | `--num-frames` | — | all | Number of frames to process. |
 | `--qm-radius` | — | `5.0` | QM-solvent shell radius (Å). **Negative disables QM solvent.** |
-| `--mm-monomer` | — | off | `0` = embed other monomers as zero charges; or one charge file per monomer. |
+| `--mm-monomer` | — | off | `0` = embed other monomers as zero charges; or one `{system}.chg` file (`element charge`) per monomer. |
 | `--mm-solvent` | — | off | Flag alone = auto-charge non-QM solvent from JSON; or a path to a charge file. |
 | `--output-dir` | — | `.` (cwd) | Folder for the per-frame output; created if missing. |
 | `--log-file` | — | `giqpy-run.log` | Log file name. |

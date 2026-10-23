@@ -24,7 +24,10 @@ Flags:
     --system-info   (Required) : Single JSON defining all monomers and the solvent.
     --qm-radius     (Optional) : QM solvent shell radius (Å) around core atoms (default 5.0; negative disables).
     --mm-monomer    (Optional) : MM embedding from other monomers. '0' = zero charges at their positions;
-                                  or one charge file ("charge x y z") per monomer.
+                                  or one charge file per monomer, named '{system}.chg' after its JSON
+                                  'system' label (e.g. cv-A.chg cv-B.chg), with two columns
+                                  "element charge" in trajectory atom order. Positions always come
+                                  from the trajectory frame.
     --mm-solvent    (Optional) : MM solvent. Flag alone = non-QM solvent charged from system_info;
                                   or a path to an XYZ-like file ("charge x y z", 2 header lines).
     --log-file      (Optional) : Log file name (default: giqpy-run.log).
@@ -73,55 +76,83 @@ def resolve_mm_solvent(
     return None, False
 
 
-def resolve_mm_monomer(
+def load_mm_monomer_charges(
     mm_monomer_arg: Optional[List[str]],
-    n_dyes: int,
+    monomer_labels: List[str],
+) -> Optional[List[Optional[Tuple[List[str], List[float]]]]]:
+    """
+    Read the --mm-monomer charge files once, before the frame loop.
+
+    Each file must be named '{system}.chg' after a JSON 'system' label (e.g. cv-A.chg), one per
+    monomer, in any order. Returns, in monomer order, (elements, charges) per monomer, or None per
+    monomer for '--mm-monomer 0' (zero charges). Returns None when --mm-monomer is not given.
+    """
+    if mm_monomer_arg is None:
+        return None
+    n_dyes = len(monomer_labels)
+    if mm_monomer_arg == ['0']:
+        fn.write_to_log("Applying zero charges for other-monomer embedding (--mm-monomer 0).")
+        return [None] * n_dyes
+
+    expected = {f"{label}.chg": i for i, label in enumerate(monomer_labels)}
+    names = [os.path.basename(p) for p in mm_monomer_arg]
+    if sorted(names) != sorted(expected):
+        raise ValueError(f"--mm-monomer needs exactly one charge file per monomer, named after its JSON "
+                         f"'system' label: {', '.join(expected)}. Got: {', '.join(names) or 'none'}.")
+
+    per_monomer: List[Optional[Tuple[List[str], List[float]]]] = [None] * n_dyes
+    for path, name in zip(mm_monomer_arg, names):
+        per_monomer[expected[name]] = fn.read_monomer_charge_file(path)
+        fn.write_to_log(f"Loaded {len(per_monomer[expected[name]][1])} embedding charges for "
+                        f"'{monomer_labels[expected[name]]}' from {path}.")
+    return per_monomer
+
+
+def resolve_mm_monomer(
+    mm_monomer_charges: Optional[List[Optional[Tuple[List[str], List[float]]]]],
+    monomer_labels: List[str],
+    core_atoms: List[str],
     core_coords: fn.CoordType,
     n_atoms_per_monomer: List[int],
 ) -> List[List[fn.MMChargeTupleType]]:
     """
     Build the inter-monomer MM embedding charges for each monomer (charges from every OTHER monomer).
+    Positions are the monomer's atoms in the current frame; the charge files supply charges only,
+    and their element column must match the trajectory atom by atom.
     Returns a list (length n_dyes) of (x,y,z,q) lists.
     """
+    n_dyes = len(n_atoms_per_monomer)
     embedding: List[List[fn.MMChargeTupleType]] = [[] for _ in range(n_dyes)]
-    if mm_monomer_arg is None:
+    if mm_monomer_charges is None:
         return embedding
 
     if n_dyes == 1:
         fn.write_to_log("--mm-monomer specified with --num-monomers 1; no other monomers to embed.", is_warning=True)
         return embedding
 
-    # Per-monomer core coordinate slices.
-    slices: List[fn.CoordType] = []
+    # Per-monomer (x, y, z, q) from this frame's coordinates.
+    per_monomer: List[List[fn.MMChargeTupleType]] = []
     idx = 0
-    for n in n_atoms_per_monomer:
-        slices.append(core_coords[idx:idx + n])
+    for j, n in enumerate(n_atoms_per_monomer):
+        atoms, coords = core_atoms[idx:idx + n], core_coords[idx:idx + n]
         idx += n
+        if mm_monomer_charges[j] is None:
+            charges = [0.0] * n
+        else:
+            elements, charges = mm_monomer_charges[j]
+            if len(charges) != n:
+                raise ValueError(f"{monomer_labels[j]}.chg has {len(charges)} charges, but "
+                                 f"'{monomer_labels[j]}' has {n} atoms in the trajectory.")
+            for k, (e_file, e_traj) in enumerate(zip(elements, atoms)):
+                if e_file != e_traj:
+                    raise ValueError(f"{monomer_labels[j]}.chg line {k + 1} is '{e_file}', but the trajectory "
+                                     f"atom is '{e_traj}'. Charge file must follow the trajectory atom order.")
+        per_monomer.append([(row[0], row[1], row[2], q) for row, q in zip(coords, charges)])
 
-    if mm_monomer_arg == ['0']:
-        fn.write_to_log("Applying zero charges for other-monomer embedding (--mm-monomer 0).")
-        for i in range(n_dyes):
-            for j in range(n_dyes):
-                if i == j:
-                    continue
-                for row in slices[j]:
-                    embedding[i].append((row[0], row[1], row[2], 0.0))
-        return embedding
-
-    if len(mm_monomer_arg) != n_dyes:
-        warn = (f"--mm-monomer was given {len(mm_monomer_arg)} charge file(s), but --num-monomers is {n_dyes}. "
-                f"Expected {n_dyes} file(s). MM monomer embedding charges will be skipped.")
-        print(f"\nWARNING: {warn}")
-        fn.write_to_log(warn, is_warning=True)
-        return embedding
-
-    fn.write_to_log(f"Loading inter-monomer embedding charges from {n_dyes} file(s).")
-    per_file = [fn.load_monomer_charges_from_file(f) for f in mm_monomer_arg]
     for i in range(n_dyes):
         for j in range(n_dyes):
-            if i == j:
-                continue
-            embedding[i].extend(per_file[j])
+            if i != j:
+                embedding[i].extend(per_monomer[j])
     return embedding
 
 
@@ -149,7 +180,8 @@ def main() -> None:
     parser.add_argument('--qm-radius', type=float, default=5.0,
                         help='Radius (Å) for QM solvent selection (default: 5.0). Negative disables QM solvent.')
     parser.add_argument('--mm-monomer', type=str, nargs='*',
-                        help="MM embedding for other monomers: '0' for zero charges, or one charge file per monomer.")
+                        help="MM embedding for other monomers: '0' for zero charges, or one '{system}.chg' file "
+                             "per monomer ('element charge' columns; positions taken from the trajectory).")
     parser.add_argument('--mm-solvent', type=str, nargs='?', const=fn.AUTO_MM_SOLVENT_TRIGGER, default=None,
                         help='MM solvent: XYZ-like charge file, or flag alone to auto-detect from non-QM solvent.')
     parser.add_argument('--output-dir', type=str, default=os.getcwd(),
@@ -210,6 +242,7 @@ def main() -> None:
         base_system_name = "_".join(monomer_names)
     # Aggregate file base, e.g. 'cv-dimer' / 'cv-bodipy-trimer' (names from JSON, '-' joined).
     aggregate_file_base = fn.aggregate_basename(monomers_meta, args.num_monomers)
+    mm_monomer_charges = load_mm_monomer_charges(args.mm_monomer, monomer_labels)
 
     for frame_idx, (frame_id, temp_xyz_path, out_dir) in enumerate(frames):
         print(f"[{frame_idx + 1}/{total}] Processing frame {frame_id} -> {out_dir}")
@@ -217,7 +250,7 @@ def main() -> None:
 
         try:
             (monomer_qm_regions, aggregate_qm_region, non_qm_sol_groups,
-             qm_solvent_flags, core_coords, n_atoms_per_monomer) = \
+             qm_solvent_flags, core_atoms, core_coords, n_atoms_per_monomer) = \
                 fn.localize_solvent_and_prepare_regions(temp_xyz_path, monomers_meta, solvent_meta, args.qm_radius)
         except Exception as e:
             err = f"Error during region preparation for frame {frame_id}: {e}"
@@ -236,7 +269,8 @@ def main() -> None:
 
         # --- Resolve MM charges (solvent + inter-monomer embedding) ---
         mm_solvent_charges, system_has_mm_solvent = resolve_mm_solvent(args.mm_solvent, non_qm_sol_groups, solvent_meta)
-        mm_embedding = resolve_mm_monomer(args.mm_monomer, args.num_monomers, core_coords, n_atoms_per_monomer)
+        mm_embedding = resolve_mm_monomer(mm_monomer_charges, monomer_labels, core_atoms, core_coords,
+                                          n_atoms_per_monomer)
 
         # --- QM region XYZ files ---
         agg_qm_atoms, agg_qm_coords = aggregate_qm_region
