@@ -12,7 +12,8 @@ Per frame it writes (into the frame's output directory):
     {agg}-qm.xyz         : aggregate QM region   (core + all QM solvent)
     {system}-qm.xyz      : monomer QM region     (core + its UNIQUE QM solvent)
     {agg}-mm.xyz         : aggregate MM charges  (MM solvent only)            [if MM requested]
-    {system}-mm.xyz      : monomer MM charges    (other-monomer embedding + MM solvent) [if requested]
+    {system}-mm.xyz      : monomer MM charges    (other-monomer embedding + MM solvent + the QM solvent
+                                                  of the other monomers) [if requested]
 where {agg} is "{name}-{dimer|trimer|...}" built from the JSON monomer "name"s (used once if all
 monomers share it, else joined by '-' in JSON order), and {system} is the per-monomer label from
 the JSON "system" key (e.g. m1, m2).
@@ -28,9 +29,12 @@ Flags:
                                   'system' label (e.g. cv-A.chg cv-B.chg), with two columns
                                   "element charge" in trajectory atom order. Positions always come
                                   from the trajectory frame.
-    --mm-solvent    (Optional) : MM solvent. Flag alone = non-QM solvent charged from system_info;
-                                  or a path to an XYZ-like file ("charge x y z", 2 header lines).
-    --log-file      (Optional) : Log file name (default: giqpy-run.log).
+    --mm-solvent    (Optional) : MM solvent. Flag alone = non-QM solvent charged from system_info,
+                                  and in a monomer's file also the solvent in the other monomers'
+                                  QM regions, so that a monomer sees every solvent molecule once;
+                                  or a path to an XYZ-like file ("charge x y z", 2 header lines),
+                                  which is used as given.
+    --log-file     (Optional) : Log file name (default: giqpy-run.log).
 """
 import argparse
 import os
@@ -54,26 +58,16 @@ def resolve_mm_solvent(
         if not non_qm_sol_groups:
             fn.write_to_log("No non-QM solvent molecules found to treat as MM solvent.")
             return None, False
-        try:
-            charges = fn.assign_charges_to_solvent_molecules(non_qm_sol_groups, solvent_metadata)
-        except ValueError as e:
-            fn.write_to_log(f"Error assigning charges to auto-detected MM solvent: {e}", is_error=True)
-            return None, False
-        if charges:
-            fn.write_to_log(f"Generated {len(charges)} MM solvent point charges from auto-detection.")
-            return charges, True
-        fn.write_to_log("Auto-detection found non-QM solvent groups, but no charges were assigned.")
-        return None, False
+        charges = fn.assign_charges_to_solvent_molecules(non_qm_sol_groups, solvent_metadata)
+        fn.write_to_log(f"Generated {len(charges)} MM solvent point charges from auto-detection.")
+        return charges, True
 
     # A path to an XYZ-like MM solvent file was provided.
     charges = fn.read_charge_file(mm_solvent_arg, skip_header=2)
-    if charges:
-        fn.write_to_log(f"Loaded {len(charges)} MM solvent point charges from file: {mm_solvent_arg}.")
-        return charges, True
-    warn = f"No valid MM solvent charges loaded from file {mm_solvent_arg}."
-    print(f"\nWARNING: {warn}")
-    fn.write_to_log(warn, is_warning=True)
-    return None, False
+    if not charges:
+        raise ValueError(f"No MM solvent charges found in file {mm_solvent_arg}.")
+    fn.write_to_log(f"Loaded {len(charges)} MM solvent point charges from file: {mm_solvent_arg}.")
+    return charges, True
 
 
 def load_mm_monomer_charges(
@@ -243,13 +237,20 @@ def main() -> None:
     # Aggregate file base, e.g. 'cv-dimer' / 'cv-bodipy-trimer' (names from JSON, '-' joined).
     aggregate_file_base = fn.aggregate_basename(monomers_meta, args.num_monomers)
     mm_monomer_charges = load_mm_monomer_charges(args.mm_monomer, monomer_labels)
+    auto_mm_solvent = args.mm_solvent == fn.AUTO_MM_SOLVENT_TRIGGER
+    if args.mm_solvent is not None and not auto_mm_solvent and args.qm_radius >= 0:
+        warn = (f"--mm-solvent {args.mm_solvent} is used as given: the solvent in the other monomers' "
+                f"QM regions is not added to a monomer's MM charges.")
+        print(f"WARNING: {warn}")
+        fn.write_to_log(warn, is_warning=True)
+    failed_frames: List[str] = []
 
     for frame_idx, (frame_id, temp_xyz_path, out_dir) in enumerate(frames):
         print(f"[{frame_idx + 1}/{total}] Processing frame {frame_id} -> {out_dir}")
         fn.write_to_log(f"\n\n--- Processing Frame {frame_idx + 1} / {total} (ID: {frame_id}) -> '{out_dir}' ---")
 
         try:
-            (monomer_qm_regions, aggregate_qm_region, non_qm_sol_groups,
+            (monomer_qm_regions, aggregate_qm_region, non_qm_sol_groups, qm_sol_groups,
              qm_solvent_flags, core_atoms, core_coords, n_atoms_per_monomer) = \
                 fn.localize_solvent_and_prepare_regions(temp_xyz_path, monomers_meta, solvent_meta, args.qm_radius)
         except Exception as e:
@@ -257,6 +258,7 @@ def main() -> None:
             print(f"\nERROR: {err}", file=sys.stderr)
             fn.write_to_log(err, is_error=True)
             fn.write_to_log(f"Skipping frame {frame_id}.", is_warning=True)
+            failed_frames.append(frame_id)
             continue
 
         # Title/comment base with optional m1-m2 centroid distance.
@@ -293,12 +295,21 @@ def main() -> None:
                          comment=f"mm {solvent_name} for {base_system_name} {combined_system_term}")
             fn.write_to_log(f"Wrote aggregate MM charges ({len(mm_solvent_charges)} solvent point charges).")
 
-        # Monomers: other-monomer embedding + MM solvent.
+        # Monomers: other-monomer embedding + MM solvent + the other monomers' QM solvent.
         for i in range(args.num_monomers):
             combined: List[fn.MMChargeTupleType] = []
             combined.extend(mm_embedding[i])
             if mm_solvent_charges:
                 combined.extend(mm_solvent_charges)
+            if auto_mm_solvent:
+                other_qm_sol = [g for j, groups in enumerate(qm_sol_groups) if j != i for g in groups]
+                combined.extend(fn.assign_charges_to_solvent_molecules(other_qm_sol, solvent_meta))
+                # A monomer must see every solvent molecule of the frame exactly once.
+                n_total = len(non_qm_sol_groups) + sum(len(groups) for groups in qm_sol_groups)
+                n_mm = (len(combined) - len(mm_embedding[i])) / solvent_meta[fn.JSON_KEY_NATOMS]
+                if n_mm + len(qm_sol_groups[i]) != n_total:
+                    raise ValueError(f"Frame {frame_id}, {monomer_labels[i]}: {len(qm_sol_groups[i])} QM + {n_mm:g} MM "
+                                     f"solvent molecules, but the frame has {n_total}.")
             if combined:
                 has_embedding = bool(mm_embedding[i])
                 if has_embedding:
@@ -318,6 +329,11 @@ def main() -> None:
             except OSError as e:
                 fn.write_to_log(f"Could not remove temporary file {temp_xyz_path}: {e}", is_warning=True)
 
+    if failed_frames:
+        err = f"{len(failed_frames)} of {total} frames failed: {', '.join(failed_frames)}."
+        print(f"ERROR: {err}", file=sys.stderr)
+        fn.write_to_log(err, is_error=True)
+        sys.exit(1)
     print("All XYZ generation complete.")
     fn.write_to_log("All XYZ generation complete.")
     if fn.log_file_handle:

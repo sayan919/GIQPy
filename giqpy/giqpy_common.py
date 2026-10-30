@@ -98,6 +98,16 @@ def split_frames(
             print(f"WARNING: {warn}")
             write_to_log(warn, is_warning=True)
 
+    # Every frame must have the atom count of the first: the frames are cut by line number.
+    for i in range(frames_to_process):
+        count_line = lines[i * block_size].strip()
+        if count_line != str(total_atoms_per_frame):
+            err = (f"Frame {i + 1} of {traj_xyz_path} starts with '{count_line}', expected the atom "
+                   f"count {total_atoms_per_frame}. All frames must have the same number of atoms.")
+            print(f"ERROR: {err}", file=sys.stderr)
+            write_to_log(err, is_error=True)
+            raise ValueError(err)
+
     processed_frames_info: List[Tuple[str, str, str]] = []
     for i in range(frames_to_process):
         frame_id_str = str(i + 1)
@@ -397,7 +407,15 @@ def group_qm_molecules(atoms: AtomListType, coords: CoordType, fmt_counts: Dict[
 
     groups: List[SolventGroupType] = []
     for i in range(0, len(atoms), size):
-        groups.append((atoms[i:i + size], coords[i:i + size]))
+        mol_atoms = atoms[i:i + size]
+        mol_counts = {element: mol_atoms.count(element) for element in set(mol_atoms)}
+        if mol_counts != fmt_counts:
+            msg = (f"Solvent molecule {i // size + 1} has atoms {mol_atoms}, which does not match the "
+                   f"formula {fmt_counts}. Check the atom order and the 'index' specs.")
+            print(f"ERROR: {msg}", file=sys.stderr)
+            write_to_log(msg, is_error=True)
+            raise ValueError(msg)
+        groups.append((mol_atoms, coords[i:i + size]))
     return groups
 
 
@@ -497,8 +515,8 @@ def localize_solvent_and_prepare_regions(
     monomers_meta: List[Dict[str, Any]],
     solvent_meta: Dict[str, Any],
     qm_radius: float,
-) -> Tuple[List[SolventGroupType], SolventGroupType, List[SolventGroupType], Dict[str, bool],
-           AtomListType, CoordType, List[int]]:
+) -> Tuple[List[SolventGroupType], SolventGroupType, List[SolventGroupType], List[List[SolventGroupType]],
+           Dict[str, bool], AtomListType, CoordType, List[int]]:
     """
     Read the input XYZ and partition QM solvent into per-monomer and aggregate regions.
 
@@ -511,6 +529,7 @@ def localize_solvent_and_prepare_regions(
         monomer_qm_regions    : list of (atoms, coords) per monomer (core + its unique QM solvent)
         aggregate_qm_region   : (atoms, coords) for the full aggregate (core + all QM solvent)
         non_qm_solvent_groups : solvent molecules outside the QM shell
+        monomer_groups        : per monomer, the solvent molecules in its QM region
         qm_solvent_flags      : booleans 'monomer_i_has_added_qm_solvent' / 'aggregate_has_added_qm_solvent'
         core_atoms            : core element symbols, monomer by monomer
         core_coords           : (Ncore, 3) core coordinates (centroid distances, MM monomer embedding)
@@ -569,7 +588,7 @@ def localize_solvent_and_prepare_regions(
         qm_solvent_flags[f'monomer_{i}_has_added_qm_solvent'] = bool(add_atoms)
     qm_solvent_flags['aggregate_has_added_qm_solvent'] = bool(agg_sol_atoms)
 
-    return (monomer_qm_regions, aggregate_qm_region, non_qm_solvent_groups,
+    return (monomer_qm_regions, aggregate_qm_region, non_qm_solvent_groups, monomer_groups,
             qm_solvent_flags, core_atoms, core_coords, n_atoms_per_monomer_list)
 
 
@@ -580,14 +599,8 @@ def read_charge_file(path: str, skip_header: int = 0) -> List[MMChargeTupleType]
     Returns a list of (x, y, z, charge) tuples for Gaussian compatibility.
     """
     charges_data: List[MMChargeTupleType] = []
-    try:
-        with open(path, 'r') as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        warn_msg = f"Charge file not found: {path}. Returning empty charge list."
-        print(f"WARNING: {warn_msg}")
-        write_to_log(warn_msg, is_warning=True)
-        return charges_data
+    with open(path, 'r') as f:
+        lines = f.readlines()
 
     for offset, line_content in enumerate(lines[skip_header:]):
         line_num = offset + skip_header + 1
@@ -595,16 +608,12 @@ def read_charge_file(path: str, skip_header: int = 0) -> List[MMChargeTupleType]
         if len(parts) == 4:
             try:
                 q, x, y, z = (float(p) for p in parts)  # file format is: charge x y z
-                charges_data.append((x, y, z, q))
             except ValueError:
-                warn_msg = f"Non-numeric value in charge file {path} on line {line_num}: {line_content.strip()}"
-                print(f"WARNING: {warn_msg}")
-                write_to_log(warn_msg, is_warning=True)
+                raise ValueError(f"Non-numeric value in charge file {path} on line {line_num}: {line_content.strip()}")
+            charges_data.append((x, y, z, q))
         elif parts:
-            warn_msg = (f"Malformed line in charge file {path} on line {line_num} "
-                        f"(expected 4 values, got {len(parts)}): {line_content.strip()}")
-            print(f"WARNING: {warn_msg}")
-            write_to_log(warn_msg, is_warning=True)
+            raise ValueError(f"Malformed line in charge file {path} on line {line_num} "
+                             f"(expected 4 values, got {len(parts)}): {line_content.strip()}")
     return charges_data
 
 
@@ -654,12 +663,9 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
 
     for mol_idx, (atom_symbols_in_molecule, coords_for_molecule) in enumerate(solvent_groups):
         if len(atom_symbols_in_molecule) != num_atoms_per_solvent_mol_defined:
-            warn_msg = (f"Solvent molecule {mol_idx + 1} (auto-detected for MM) has {len(atom_symbols_in_molecule)} atoms, "
-                        f"but system_info defines {num_atoms_per_solvent_mol_defined} for solvent "
-                        f"'{solvent_metadata_entry.get(JSON_KEY_NAME, 'Unnamed Solvent')}'. Skipping this molecule for MM charges.")
-            print(f"WARNING: {warn_msg}")
-            write_to_log(warn_msg, is_warning=True)
-            continue
+            raise ValueError(f"Solvent molecule {mol_idx + 1} (auto-detected for MM) has {len(atom_symbols_in_molecule)} atoms, "
+                             f"but system_info defines {num_atoms_per_solvent_mol_defined} for solvent "
+                             f"'{solvent_metadata_entry.get(JSON_KEY_NAME, 'Unnamed Solvent')}'.")
 
         for atom_idx_in_mol in range(len(atom_symbols_in_molecule)):
             atom_symbol_from_xyz = atom_symbols_in_molecule[atom_idx_in_mol]
@@ -670,11 +676,8 @@ def assign_charges_to_solvent_molecules(solvent_groups: List[SolventGroupType], 
             defined_element_for_pos: str = charge_info_for_this_atom_pos[JSON_KEY_ELEMENT]
 
             if atom_symbol_from_xyz != defined_element_for_pos:
-                warn_msg = (f"Element mismatch for atom {atom_idx_in_mol + 1} in auto-detected MM solvent molecule {mol_idx + 1}. "
-                            f"XYZ has '{atom_symbol_from_xyz}', system_info expects '{defined_element_for_pos}' at this position. "
-                            f"Using charge defined for '{defined_element_for_pos}' ({charge_value}).")
-                print(f"WARNING: {warn_msg}")
-                write_to_log(warn_msg, is_warning=True)
+                raise ValueError(f"Element mismatch for atom {atom_idx_in_mol + 1} in auto-detected MM solvent molecule {mol_idx + 1}. "
+                                 f"XYZ has '{atom_symbol_from_xyz}', system_info expects '{defined_element_for_pos}' at this position.")
 
             mm_solvent_charges_list.append((atom_coord[0], atom_coord[1], atom_coord[2], charge_value))
 

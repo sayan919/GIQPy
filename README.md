@@ -229,7 +229,8 @@ giqpy-outputs/
 │       ├── m1-qm.xyz             # monomer QM region    (core + its UNIQUE QM solvent)
 │       ├── m2-qm.xyz
 │       ├── cv-dimer-mm.xyz       # aggregate MM charges (MM solvent only)        ┐ only when
-│       ├── m1-mm.xyz             # monomer MM charges   (embedding + MM solvent) │ MM is
+│       ├── m1-mm.xyz             # monomer MM charges   (embedding + MM solvent  │ MM is
+│       │                         #  + the other monomers' QM solvent)            │
 │       └── m2-mm.xyz             #                                               ┘ requested
 └── gaussian-inputs/              # ← xyz-to-gaussian.py (Stage 2)
     └── 1/
@@ -246,7 +247,7 @@ of `gaussian-inputs/`. (Without `--output-dir`, the `.com` files are written nex
 | `giqpy.py` | `{agg}-qm.xyz` | Aggregate QM region (cores + all QM solvent). |
 | `giqpy.py` | `{system}-qm.xyz` | One monomer's QM region (core + its unique QM solvent). |
 | `giqpy.py` | `{agg}-mm.xyz` | Aggregate MM charges — **MM solvent only**. |
-| `giqpy.py` | `{system}-mm.xyz` | Monomer MM charges — other-monomer embedding **+** MM solvent. |
+| `giqpy.py` | `{system}-mm.xyz` | Monomer MM charges — other-monomer embedding **+** MM solvent **+** the other monomers' QM solvent. |
 | `xyz-to-gaussian.py` | `{system}{suffix}.com` | Per-monomer Gaussian input. |
 | `xyz-to-gaussian.py` | `{agg}{suffix}.com` | Aggregate (dimer/trimer/…) Gaussian input. |
 | `xyz-to-gaussian.py` | `{agg}-eetg{suffix}.com` | EET-analysis dimer input (`--eetg`). |
@@ -268,7 +269,7 @@ MM `.xyz` files store `charge x y z` (not `element x y z`); their header line sa
 | `--num-frames` | — | all | Number of frames to process. |
 | `--qm-radius` | — | `5.0` | QM-solvent shell radius (Å). **Negative disables QM solvent.** |
 | `--mm-monomer` | — | off | `0` = embed other monomers as zero charges; or one `{system}.chg` file (`element charge`) per monomer. |
-| `--mm-solvent` | — | off | Flag alone = auto-charge non-QM solvent from JSON; or a path to a charge file. |
+| `--mm-solvent` | — | off | Flag alone = auto-charge non-QM solvent from JSON (in a monomer's file, also the other monomers' QM solvent); or a path to a charge file, used as given. |
 | `--output-dir` | — | `.` (cwd) | Folder for the per-frame output; created if missing. |
 | `--log-file` | — | `giqpy-run.log` | Log file name. |
 
@@ -294,9 +295,15 @@ MM `.xyz` files store `charge x y z` (not `element x y z`); their header line sa
 - **MM solvent auto-detection** (`--mm-solvent` with no path) assigns charges to every
   non-QM solvent molecule using the `charges` template in the JSON, matching by atom position.
 - **Embedding semantics:** the aggregate `.com` carries MM solvent only; each monomer `.com`
-  additionally carries the other monomers' charges (zero or explicit, per `--mm-monomer`).
+  additionally carries the other monomers' charges (zero or explicit, per `--mm-monomer`) and,
+  with `--mm-solvent` alone, the solvent in the other monomers' QM regions as point charges. A
+  monomer therefore sees every solvent molecule exactly once, as QM or as MM, and the run stops if
+  it does not. A solvent molecule within `--qm-radius` of a monomer but nearer another one is MM
+  for that monomer. A charge file given to `--mm-solvent` is used as given, with a warning.
 - **Logging:** progress prints to the console; full details (and stack traces on failure) go to
-  the log file. A bad frame in a trajectory is skipped with a warning rather than aborting the run.
+  the log file. A frame that fails is reported and the remaining frames still run, then the script
+  exits with status 1. Wrong elements, malformed or missing charge files and missing monomer MM
+  files are errors.
 - **Housekeeping:** per-frame scratch files (`current-frame.xyz`) are removed automatically.
 
 ---

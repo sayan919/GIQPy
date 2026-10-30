@@ -157,6 +157,8 @@ def generate_for_dir(
             atoms, coords, _ = fn.read_xyz(qm_path)
             has_qm_sol = len(atoms) > n_atoms_per_monomer[i]
             mm_charges = load_mm(os.path.join(src_dir, f"{label}-mm.xyz"))
+            if system_has_mm_solvent and mm_charges is None:
+                raise ValueError(f"{label}-mm.xyz is missing or empty in {src_dir}, but the system has MM solvent.")
             suffix = fn.get_solvent_descriptor_suffix(has_qm_sol, system_has_mm_solvent)
             title = f"{monomer_names[i]} {label}{fn.get_solvent_title_fragment(has_qm_sol, system_has_mm_solvent, solvent_name)}".strip()
             fn.write_com_file(
@@ -252,6 +254,7 @@ def main() -> None:
     output_base = args.output_dir if args.output_dir is not None else args.input_dir
 
     total = len(frame_dirs)
+    failed_dirs: List[str] = []
     for idx, src_dir in enumerate(frame_dirs):
         # Mirror the per-frame subdirectory structure in the output directory.
         if os.path.abspath(src_dir) == os.path.abspath(args.input_dir):
@@ -264,6 +267,7 @@ def main() -> None:
             err = f"Could not create output directory {dest_dir}: {e}"
             print(f"\nERROR: {err}", file=sys.stderr)
             fn.write_to_log(err, is_error=True)
+            failed_dirs.append(src_dir)
             continue
         print(f"[{idx + 1}/{total}] Writing .com files in {dest_dir}")
         fn.write_to_log(f"\n\n--- Frame dir {idx + 1}/{total}: {src_dir} -> {dest_dir} ---")
@@ -274,8 +278,14 @@ def main() -> None:
             err = f"Error generating .com files in {dest_dir}: {e}"
             print(f"\nERROR: {err}", file=sys.stderr)
             fn.write_to_log(err, is_error=True)
+            failed_dirs.append(src_dir)
             continue
 
+    if failed_dirs:
+        err = f"{len(failed_dirs)} of {total} frame directories failed: {', '.join(failed_dirs)}."
+        print(f"ERROR: {err}", file=sys.stderr)
+        fn.write_to_log(err, is_error=True)
+        sys.exit(1)
     print("All .com generation complete.")
     fn.write_to_log("All .com generation complete.")
     if fn.log_file_handle:
