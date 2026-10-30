@@ -61,6 +61,30 @@ separate folders (`giqpy-outputs/coordinates/` and `giqpy-outputs/gaussian-input
 
 ---
 
+## QM and MM regions
+
+The diagrams below are schematic and not to scale. Dyes are drawn side by side for clarity.
+
+For a dimer, GIQPy splits each frame into a QM shell per dye and the water outside them (panel 1). Each input
+then treats those regions differently. A monomer input has its own dye and shell in QM, and its partner and the
+partner's shell as point charges (panels 2 and 3). The aggregate input has both dyes and both shells in QM (panel 4).
+A water within `--qm-radius` of a dye but nearer the other one is MM in that dye's input.
+
+<div align="center">
+  <img src="docs/giqpy-qm-mm-regions.svg" alt="Four panels of a dimer in a solvent box. Panel 1: each solvent molecule within the QM radius is assigned to its nearest dye, the rest lie outside both shells. Panel 2, m1-qm-mm.com: m1 and its shell are QM; m2, its shell and the outer solvent are MM point charges. Panel 3, m2-qm-mm.com: the same with m1 and m2 swapped. Panel 4, cv-dimer-qm-mm.com: both dyes and both shells are QM; the outer solvent is MM." width="100%"/>
+</div>
+
+Panels 2 and 3 use `--mm-solvent` and `--mm-monomer` with charge files. With `--mm-monomer 0` the partner's atoms
+carry zero charges, and without `--mm-monomer` the partner dye is left out.
+
+The solvent flags set what a monomer input contains and the suffix of its filename:
+
+<div align="center">
+  <img src="docs/giqpy-solvent-treatments.svg" alt="One monomer with four solvent treatments. m1.com, --qm-radius 0: the dye alone. m1-qm.com, --qm-radius 5: the dye and its QM shell, no other solvent. m1-mm.com, --qm-radius 0 with --mm-solvent: the dye in QM and all solvent as MM charges. m1-qm-mm.com, --qm-radius 5 with --mm-solvent: the dye and shell in QM, the rest as MM charges." width="100%"/>
+</div>
+
+---
+
 ## Installation
 
 GIQPy is a set of standalone scripts — just clone and run.
